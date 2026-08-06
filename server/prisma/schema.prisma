@@ -1,0 +1,432 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  HR_MANAGER
+  ATTENDANCE_OFFICER
+  DEPARTMENT_MANAGER
+  STAFF
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  CASUAL
+  MATERNITY
+  PATERNITY
+  UNPAID
+  OTHER
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+  HOLIDAY
+  LEAVE
+  OVERTIME
+}
+
+enum BreakType {
+  CHECK_IN
+  CHECK_OUT
+  BREAK_IN
+  BREAK_OUT
+}
+
+enum ShiftType {
+  MORNING
+  EVENING
+  NIGHT
+  FLEXIBLE
+  CUSTOM
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  APPROVE
+  REJECT
+  CANCEL
+  CHECK_IN
+  CHECK_OUT
+  BREAK_IN
+  BREAK_OUT
+  EXPORT
+  IMPORT
+}
+
+model Company {
+  id               String          @id @default(cuid())
+  name             String
+  code             String          @unique
+  description      String?
+  logo             String?
+  email            String?
+  phone            String?
+  address          String?
+  city             String?
+  state            String?
+  country          String?
+  zipCode          String?
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  branches         Branch[]
+  departments      Department[]
+  employees        Employee[]
+  holidays         Holiday[]
+  shifts           Shift[]
+  attendance       Attendance[]
+  leaveRequests    LeaveRequest[]
+  auditLogs        AuditLog[]
+}
+
+model Branch {
+  id               String          @id @default(cuid())
+  name             String
+  code             String
+  address          String?
+  city             String?
+  state            String?
+  country          String?
+  zipCode          String?
+  phone            String?
+  email            String?
+  isActive         Boolean         @default(true)
+  companyId        String
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  departments      Department[]
+  employees        Employee[]
+  attendance       Attendance[]
+  shifts           Shift[]
+  auditLogs        AuditLog[]
+}
+
+model Department {
+  id               String          @id @default(cuid())
+  name             String
+  code             String
+  description      String?
+  isActive         Boolean         @default(true)
+  companyId        String
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  branchId         String?
+  branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  managerId        String?
+  manager          Employee?       @relation("DepartmentManager", fields: [managerId], references: [id])
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  employees        Employee[]
+  positions        Position[]
+  auditLogs        AuditLog[]
+}
+
+model Position {
+  id               String          @id @default(cuid())
+  name             String
+  code             String
+  description      String?
+  isActive         Boolean         @default(true)
+  departmentId     String
+  department       Department      @relation(fields: [departmentId], references: [id], onDelete: CASCADE)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  employees        Employee[]
+}
+
+model Employee {
+  id               String          @id @default(cuid())
+  employeeId       String          @unique // e.g., EMP-001
+  firstName        String
+  lastName         String
+  middleName       String?
+  email            String          @unique
+  phone            String?
+  gender           Gender
+  dateOfBirth      DateTime
+  hireDate         DateTime
+  terminationDate  DateTime?
+  isActive         Boolean         @default(true)
+  avatar           String?         // Cloudinary URL
+  biometricId      String?         @unique // For fingerprint scanner
+  facialData       String?         // Reference to facial recognition data
+  qrCode           String?         // QR code data
+  barcode          String?         // Barcode data
+  address          String?
+  city             String?
+  state            String?
+  country          String?
+  zipCode          String?
+  emergencyContact String?
+  emergencyPhone   String?
+  notes            String?
+
+  // Relations
+  companyId        String
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  branchId         String?
+  branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  departmentId     String?
+  department       Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  positionId       String?
+  position         Position?       @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  managerId        String?
+  manager          Employee?       @relation("EmployeeManager", fields: [managerId], references: [id])
+  subordinates     Employee[]      @relation("EmployeeManager")
+  shifts           EmployeeShift[] // Assigned shifts
+  attendance       Attendance[]
+  leaveRequests    LeaveRequest[]
+  auditLogs        AuditLog[]
+  createdBy        String?         // Admin user ID who created this employee
+  updatedBy        String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  // ID Card
+  idCard           IDCard?
+}
+
+model User {
+  id               String          @id @default(cuid())
+  email            String          @unique
+  password         String          // Hashed
+  firstName        String
+  lastName         String
+  avatar           String?
+  role             Role
+  isActive         Boolean         @default(true)
+  lastLogin        DateTime?
+  refreshToken     String?
+  refreshTokenExp  DateTime?
+  employeeId       String?         @unique // Link to employee record if the user is also an employee
+  employee         Employee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  companyId        String?
+  company          Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  branchId         String?
+  branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  departmentId     String?
+  department       Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  createdBy        String?
+  updatedBy        String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  auditLogs        AuditLog[]      @relation("UserAudit")
+  sessions         Session[]
+}
+
+model Session {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  accessToken      String          @unique
+  refreshToken     String          @unique
+  accessTokenExp   DateTime
+  refreshTokenExp  DateTime
+  ipAddress        String?
+  userAgent        String?
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model Shift {
+  id               String          @id @default(cuid())
+  name             String
+  code             String
+  description      String?
+  shiftType        ShiftType
+  startTime        String          // e.g., "09:00"
+  endTime          String          // e.g., "18:00"
+  breakStart       String?         // e.g., "13:00"
+  breakEnd         String?         // e.g., "14:00"
+  isActive         Boolean         @default(true)
+  companyId        String
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  branchId         String?
+  branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  employeeShifts   EmployeeShift[]
+  attendances      Attendance[]
+}
+
+model EmployeeShift {
+  id               String          @id @default(cuid())
+  employeeId       String
+  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: CASCADE)
+  shiftId          String
+  shift            Shift           @relation(fields: [shiftId], references: [id], onDelete: CASCADE)
+  startDate        DateTime
+  endDate          DateTime?
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([employeeId, shiftId, startDate])
+}
+
+model Attendance {
+  id               String          @id @default(cuid())
+  employeeId       String
+  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: CASCADE)
+  date             DateTime        @default(now())
+  checkIn          DateTime?
+  checkOut         DateTime?
+  checkInPhoto     String?         // Cloudinary URL
+  checkOutPhoto    String?         // Cloudinary URL
+  breakIn          DateTime?
+  breakOut         DateTime?
+  breakInPhoto     String?
+  breakOutPhoto    String?
+  overtimeHours    Float?          // In hours
+  totalHours       Float?          // Computed from checkIn/out minus breaks
+  status           AttendanceStatus
+  shiftId          String?
+  shift            Shift?          @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  companyId        String
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  branchId         String?
+  branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  isOvertime       Boolean         @default(false)
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([employeeId, date])
+  @@unique([employeeId, date])
+}
+
+model LeaveRequest {
+  id               String          @id @default(cuid())
+  employeeId       String
+  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: CASCADE)
+  leaveType        LeaveType
+  startDate        DateTime
+  endDate          DateTime
+  totalDays        Float           // Auto-calculated based on dates
+  reason           String?
+  status           LeaveStatus     @default(PENDING)
+  approvedBy       String?         // User ID of approver
+  approvedAt       DateTime?
+  rejectedReason   String?
+  companyId        String
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  branchId         String?
+  branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  departmentId     String?
+  department       Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  auditLogs        AuditLog[]
+}
+
+model Holiday {
+  id               String          @id @default(cuid())
+  name             String
+  date             DateTime
+  description      String?
+  isRecurring      Boolean         @default(false) // e.g., Christmas every year
+  companyId        String
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  branchId         String?         // If null, applies to all branches
+  branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([date, companyId, branchId])
+}
+
+model IDCard {
+  id               String          @id @default(cuid())
+  employeeId       String          @unique
+  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: CASCADE)
+  cardNumber       String          @unique
+  qrCode           String          // Base64 or URL of QR code image
+  barcode          String          // Base64 or URL of barcode image
+  issueDate        DateTime        @default(now())
+  expiryDate       DateTime?
+  isActive         Boolean         @default(true)
+  template         String?         // Custom template reference
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model AuditLog {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation("UserAudit", fields: [userId], references: [id], onDelete: CASCADE)
+  action           AuditAction
+  entity           String          // e.g., "Employee", "Attendance", "LeaveRequest"
+  entityId         String          // ID of the affected entity
+  changes          Json?           // Stores previous and new values
+  ipAddress        String?
+  userAgent        String?
+  companyId        String?
+  company          Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  branchId         String?
+  branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+}
+
+model Notification {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  title            String
+  message          String
+  type             String          // e.g., "ATTENDANCE", "LEAVE", "SYSTEM"
+  isRead           Boolean         @default(false)
+  link             String?
+  createdAt        DateTime        @default(now())
+}
+
+model Setting {
+  id               String          @id @default(cuid())
+  key              String          @unique
+  value            Json
+  description      String?
+  category         String          // e.g., "general", "attendance", "leave", "security"
+  isPublic         Boolean         @default(false)
+  companyId        String?         // If null, global setting
+  company          Company?        @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
