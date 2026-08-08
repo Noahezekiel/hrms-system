@@ -124,7 +124,7 @@ model Branch {
   email            String?
   isActive         Boolean         @default(true)
   companyId        String
-  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -142,7 +142,7 @@ model Department {
   description      String?
   isActive         Boolean         @default(true)
   companyId        String
-  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branchId         String?
   branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
   managerId        String?
@@ -162,7 +162,7 @@ model Position {
   description      String?
   isActive         Boolean         @default(true)
   departmentId     String
-  department       Department      @relation(fields: [departmentId], references: [id], onDelete: CASCADE)
+  department       Department      @relation(fields: [departmentId], references: [id], onDelete: Cascade)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -198,7 +198,7 @@ model Employee {
 
   // Relations
   companyId        String
-  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branchId         String?
   branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
   departmentId     String?
@@ -253,7 +253,7 @@ model User {
 model Session {
   id               String          @id @default(cuid())
   userId           String
-  user             User            @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   accessToken      String          @unique
   refreshToken     String          @unique
   accessTokenExp   DateTime
@@ -277,7 +277,7 @@ model Shift {
   breakEnd         String?         // e.g., "14:00"
   isActive         Boolean         @default(true)
   companyId        String
-  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branchId         String?
   branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
   createdAt        DateTime        @default(now())
@@ -290,9 +290,9 @@ model Shift {
 model EmployeeShift {
   id               String          @id @default(cuid())
   employeeId       String
-  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: CASCADE)
+  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   shiftId          String
-  shift            Shift           @relation(fields: [shiftId], references: [id], onDelete: CASCADE)
+  shift            Shift           @relation(fields: [shiftId], references: [id], onDelete: Cascade)
   startDate        DateTime
   endDate          DateTime?
   isActive         Boolean         @default(true)
@@ -305,7 +305,7 @@ model EmployeeShift {
 model Attendance {
   id               String          @id @default(cuid())
   employeeId       String
-  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: CASCADE)
+  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   date             DateTime        @default(now())
   checkIn          DateTime?
   checkOut         DateTime?
@@ -321,7 +321,7 @@ model Attendance {
   shiftId          String?
   shift            Shift?          @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   companyId        String
-  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branchId         String?
   branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
   isOvertime       Boolean         @default(false)
@@ -336,7 +336,7 @@ model Attendance {
 model LeaveRequest {
   id               String          @id @default(cuid())
   employeeId       String
-  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: CASCADE)
+  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   leaveType        LeaveType
   startDate        DateTime
   endDate          DateTime
@@ -347,7 +347,7 @@ model LeaveRequest {
   approvedAt       DateTime?
   rejectedReason   String?
   companyId        String
-  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branchId         String?
   branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
   departmentId     String?
@@ -365,7 +365,7 @@ model Holiday {
   description      String?
   isRecurring      Boolean         @default(false) // e.g., Christmas every year
   companyId        String
-  company          Company         @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branchId         String?         // If null, applies to all branches
   branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
   createdAt        DateTime        @default(now())
@@ -377,7 +377,7 @@ model Holiday {
 model IDCard {
   id               String          @id @default(cuid())
   employeeId       String          @unique
-  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: CASCADE)
+  employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   cardNumber       String          @unique
   qrCode           String          // Base64 or URL of QR code image
   barcode          String          // Base64 or URL of barcode image
@@ -392,7 +392,7 @@ model IDCard {
 model AuditLog {
   id               String          @id @default(cuid())
   userId           String
-  user             User            @relation("UserAudit", fields: [userId], references: [id], onDelete: CASCADE)
+  user             User            @relation("UserAudit", fields: [userId], references: [id], onDelete: Cascade)
   action           AuditAction
   entity           String          // e.g., "Employee", "Attendance", "LeaveRequest"
   entityId         String          // ID of the affected entity
@@ -409,7 +409,7 @@ model AuditLog {
 model Notification {
   id               String          @id @default(cuid())
   userId           String
-  user             User            @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   title            String
   message          String
   type             String          // e.g., "ATTENDANCE", "LEAVE", "SYSTEM"
@@ -426,7 +426,7 @@ model Setting {
   category         String          // e.g., "general", "attendance", "leave", "security"
   isPublic         Boolean         @default(false)
   companyId        String?         // If null, global setting
-  company          Company?        @relation(fields: [companyId], references: [id], onDelete: CASCADE)
+  company          Company?        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 }
