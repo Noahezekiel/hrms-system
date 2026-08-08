@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -108,7 +105,8 @@ model Company {
   shifts           Shift[]
   attendance       Attendance[]
   leaveRequests    LeaveRequest[]
-  auditLogs        AuditLog[]
+  users            User[]
+  settings         Setting[]
 }
 
 model Branch {
@@ -132,7 +130,9 @@ model Branch {
   employees        Employee[]
   attendance       Attendance[]
   shifts           Shift[]
-  auditLogs        AuditLog[]
+  leaveRequests    LeaveRequest[]
+  holidays         Holiday[]
+  users            User[]
 }
 
 model Department {
@@ -145,14 +145,15 @@ model Department {
   company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branchId         String?
   branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  managerId        String?
+  managerId        String?         @unique
   manager          Employee?       @relation("DepartmentManager", fields: [managerId], references: [id])
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
   employees        Employee[]
   positions        Position[]
-  auditLogs        AuditLog[]
+  leaveRequests    LeaveRequest[]
+  users            User[]
 }
 
 model Position {
@@ -171,7 +172,7 @@ model Position {
 
 model Employee {
   id               String          @id @default(cuid())
-  employeeId       String          @unique // e.g., EMP-001
+  employeeId       String          @unique
   firstName        String
   lastName         String
   middleName       String?
@@ -182,11 +183,11 @@ model Employee {
   hireDate         DateTime
   terminationDate  DateTime?
   isActive         Boolean         @default(true)
-  avatar           String?         // Cloudinary URL
-  biometricId      String?         @unique // For fingerprint scanner
-  facialData       String?         // Reference to facial recognition data
-  qrCode           String?         // QR code data
-  barcode          String?         // Barcode data
+  avatar           String?
+  biometricId      String?         @unique
+  facialData       String?
+  qrCode           String?
+  barcode          String?
   address          String?
   city             String?
   state            String?
@@ -196,7 +197,6 @@ model Employee {
   emergencyPhone   String?
   notes            String?
 
-  // Relations
   companyId        String
   company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branchId         String?
@@ -208,23 +208,27 @@ model Employee {
   managerId        String?
   manager          Employee?       @relation("EmployeeManager", fields: [managerId], references: [id])
   subordinates     Employee[]      @relation("EmployeeManager")
-  shifts           EmployeeShift[] // Assigned shifts
+  shifts           EmployeeShift[]
   attendance       Attendance[]
   leaveRequests    LeaveRequest[]
-  auditLogs        AuditLog[]
-  createdBy        String?         // Admin user ID who created this employee
+  createdBy        String?
   updatedBy        String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
-  // ID Card
   idCard           IDCard?
+
+  // Reverse for Department.manager (no fields/references here)
+  managedDepartment Department?    @relation("DepartmentManager")
+
+  // Reverse for User.employee (no fields/references here)
+  user             User?           @relation
 }
 
 model User {
   id               String          @id @default(cuid())
   email            String          @unique
-  password         String          // Hashed
+  password         String
   firstName        String
   lastName         String
   avatar           String?
@@ -233,7 +237,7 @@ model User {
   lastLogin        DateTime?
   refreshToken     String?
   refreshTokenExp  DateTime?
-  employeeId       String?         @unique // Link to employee record if the user is also an employee
+  employeeId       String?         @unique
   employee         Employee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   companyId        String?
   company          Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
@@ -248,6 +252,7 @@ model User {
 
   auditLogs        AuditLog[]      @relation("UserAudit")
   sessions         Session[]
+  notifications    Notification[]
 }
 
 model Session {
@@ -271,10 +276,10 @@ model Shift {
   code             String
   description      String?
   shiftType        ShiftType
-  startTime        String          // e.g., "09:00"
-  endTime          String          // e.g., "18:00"
-  breakStart       String?         // e.g., "13:00"
-  breakEnd         String?         // e.g., "14:00"
+  startTime        String
+  endTime          String
+  breakStart       String?
+  breakEnd         String?
   isActive         Boolean         @default(true)
   companyId        String
   company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -309,14 +314,14 @@ model Attendance {
   date             DateTime        @default(now())
   checkIn          DateTime?
   checkOut         DateTime?
-  checkInPhoto     String?         // Cloudinary URL
-  checkOutPhoto    String?         // Cloudinary URL
+  checkInPhoto     String?
+  checkOutPhoto    String?
   breakIn          DateTime?
   breakOut         DateTime?
   breakInPhoto     String?
   breakOutPhoto    String?
-  overtimeHours    Float?          // In hours
-  totalHours       Float?          // Computed from checkIn/out minus breaks
+  overtimeHours    Float?
+  totalHours       Float?
   status           AttendanceStatus
   shiftId          String?
   shift            Shift?          @relation(fields: [shiftId], references: [id], onDelete: SetNull)
@@ -340,10 +345,10 @@ model LeaveRequest {
   leaveType        LeaveType
   startDate        DateTime
   endDate          DateTime
-  totalDays        Float           // Auto-calculated based on dates
+  totalDays        Float
   reason           String?
   status           LeaveStatus     @default(PENDING)
-  approvedBy       String?         // User ID of approver
+  approvedBy       String?
   approvedAt       DateTime?
   rejectedReason   String?
   companyId        String
@@ -354,8 +359,6 @@ model LeaveRequest {
   department       Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
-
-  auditLogs        AuditLog[]
 }
 
 model Holiday {
@@ -363,10 +366,10 @@ model Holiday {
   name             String
   date             DateTime
   description      String?
-  isRecurring      Boolean         @default(false) // e.g., Christmas every year
+  isRecurring      Boolean         @default(false)
   companyId        String
   company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  branchId         String?         // If null, applies to all branches
+  branchId         String?
   branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -379,12 +382,12 @@ model IDCard {
   employeeId       String          @unique
   employee         Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   cardNumber       String          @unique
-  qrCode           String          // Base64 or URL of QR code image
-  barcode          String          // Base64 or URL of barcode image
+  qrCode           String
+  barcode          String
   issueDate        DateTime        @default(now())
   expiryDate       DateTime?
   isActive         Boolean         @default(true)
-  template         String?         // Custom template reference
+  template         String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 }
@@ -394,15 +397,13 @@ model AuditLog {
   userId           String
   user             User            @relation("UserAudit", fields: [userId], references: [id], onDelete: Cascade)
   action           AuditAction
-  entity           String          // e.g., "Employee", "Attendance", "LeaveRequest"
-  entityId         String          // ID of the affected entity
-  changes          Json?           // Stores previous and new values
+  entity           String
+  entityId         String
+  changes          Json?
   ipAddress        String?
   userAgent        String?
   companyId        String?
-  company          Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
   branchId         String?
-  branch           Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
   createdAt        DateTime        @default(now())
 }
 
@@ -412,7 +413,7 @@ model Notification {
   user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   title            String
   message          String
-  type             String          // e.g., "ATTENDANCE", "LEAVE", "SYSTEM"
+  type             String
   isRead           Boolean         @default(false)
   link             String?
   createdAt        DateTime        @default(now())
@@ -423,9 +424,9 @@ model Setting {
   key              String          @unique
   value            Json
   description      String?
-  category         String          // e.g., "general", "attendance", "leave", "security"
+  category         String
   isPublic         Boolean         @default(false)
-  companyId        String?         // If null, global setting
+  companyId        String?
   company          Company?        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
