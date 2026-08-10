@@ -97,10 +97,9 @@ export class LeaveService {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
       if (!where.startDate) {
-        where.endDate = { lte: end };
-      } else {
-        where.endDate = { lte: end };
+        where.startDate = {};
       }
+      (where.startDate as any).lte = end;
     }
 
     const total = await prisma.leaveRequest.count({ where });
@@ -342,7 +341,8 @@ export class LeaveService {
 
   private calculateLeaveDays(start: Date, end: Date): number {
     const diffTime = Math.abs(end.getTime() - start.getTime());
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return diffDays;
   }
 
   async updateLeaveRequest(id: string, data: LeaveUpdateInput, userId: string) {
@@ -794,7 +794,10 @@ export class LeaveService {
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.endDate = { lte: end };
+      if (!where.startDate) {
+        where.startDate = {};
+      }
+      (where.startDate as any).lte = end;
     }
 
     const requests = await prisma.leaveRequest.findMany({ where });

@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
 import { generateQRCode, generateQRCodeAsBuffer } from '../utils/qrcode';
-import { generateBarcode, generateBarcodeAsBuffer } from '../utils/barcode';
+import { generateBarcode } from '../utils/barcode';
 import { PDFGenerator } from '../utils/pdf';
 import logger from '../utils/logger';
 
@@ -21,7 +21,6 @@ export class IDCardService {
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -31,17 +30,14 @@ export class IDCardService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build where clause
     const where: Prisma.IDCardWhereInput = {};
 
-    // Super admin can see all; others see only their company
     if (currentUser.role !== 'SUPER_ADMIN') {
       where.employee = {
         companyId: currentUser.companyId || undefined,
       };
     }
 
-    // Apply filters
     if (search) {
       where.OR = [
         { cardNumber: { contains: search, mode: 'insensitive' } },
@@ -53,7 +49,7 @@ export class IDCardService {
     }
 
     if (companyId) {
-      where.employee = { companyId };
+      where.employee = { ...(where.employee as any), companyId };
     }
 
     if (branchId) {
@@ -68,10 +64,8 @@ export class IDCardService {
       where.isActive = isActive;
     }
 
-    // Get total count
     const total = await prisma.iDCard.count({ where });
 
-    // Get ID cards
     const idCards = await prisma.iDCard.findMany({
       where,
       skip,
@@ -87,14 +81,15 @@ export class IDCardService {
             email: true,
             phone: true,
             avatar: true,
+            companyId: true, // Added
+            company: {
+              select: { id: true, name: true, logo: true },
+            },
             department: {
               select: { id: true, name: true },
             },
             position: {
               select: { id: true, name: true },
-            },
-            company: {
-              select: { id: true, name: true, logo: true },
             },
           },
         },
@@ -125,14 +120,15 @@ export class IDCardService {
             email: true,
             phone: true,
             avatar: true,
+            companyId: true, // Added
+            company: {
+              select: { id: true, name: true, logo: true },
+            },
             department: {
               select: { id: true, name: true },
             },
             position: {
               select: { id: true, name: true },
-            },
-            company: {
-              select: { id: true, name: true, logo: true },
             },
           },
         },
@@ -143,7 +139,6 @@ export class IDCardService {
       throw new ApiError(404, 'ID Card not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -161,7 +156,6 @@ export class IDCardService {
   }
 
   async getIDCardByEmployeeId(employeeId: string, userId: string) {
-    // First verify employee exists
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
       include: { company: true },
@@ -170,7 +164,6 @@ export class IDCardService {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -194,14 +187,15 @@ export class IDCardService {
             email: true,
             phone: true,
             avatar: true,
+            companyId: true,
+            company: {
+              select: { id: true, name: true, logo: true },
+            },
             department: {
               select: { id: true, name: true },
             },
             position: {
               select: { id: true, name: true },
-            },
-            company: {
-              select: { id: true, name: true, logo: true },
             },
           },
         },
@@ -229,7 +223,6 @@ export class IDCardService {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -241,7 +234,6 @@ export class IDCardService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Check if ID card already exists
     const existing = await prisma.iDCard.findUnique({
       where: { employeeId },
     });
@@ -250,7 +242,6 @@ export class IDCardService {
       throw new ApiError(409, 'ID Card already exists for this employee. Use regenerate instead.');
     }
 
-    // Generate QR code data
     const qrData = JSON.stringify({
       employeeId: employee.employeeId,
       name: `${employee.firstName} ${employee.lastName}`,
@@ -265,7 +256,6 @@ export class IDCardService {
 
     const cardNumber = `CARD-${employee.employeeId}`;
 
-    // Create ID card
     const idCard = await prisma.iDCard.create({
       data: {
         employeeId: employee.id,
@@ -273,7 +263,7 @@ export class IDCardService {
         qrCode,
         barcode,
         issueDate: new Date(),
-        expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year default
+        expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
         isActive: true,
         template: 'default',
       },
@@ -287,21 +277,21 @@ export class IDCardService {
             email: true,
             phone: true,
             avatar: true,
+            companyId: true,
+            company: {
+              select: { id: true, name: true, logo: true },
+            },
             department: {
               select: { id: true, name: true },
             },
             position: {
               select: { id: true, name: true },
             },
-            company: {
-              select: { id: true, name: true, logo: true },
-            },
           },
         },
       },
     });
 
-    // Update employee with QR and barcode references
     await prisma.employee.update({
       where: { id: employee.id },
       data: {
@@ -310,14 +300,13 @@ export class IDCardService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'CREATE',
         entity: 'IDCard',
         entityId: idCard.id,
-        changes: { employeeId },
+        changes: JSON.stringify({ employeeId }),
         companyId: employee.companyId,
         branchId: employee.branchId || null,
       },
@@ -344,7 +333,6 @@ export class IDCardService {
       throw new ApiError(404, 'ID Card not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -358,7 +346,6 @@ export class IDCardService {
 
     const employee = existing.employee;
 
-    // Generate new QR code and barcode
     const qrData = JSON.stringify({
       employeeId: employee.employeeId,
       name: `${employee.firstName} ${employee.lastName}`,
@@ -371,7 +358,6 @@ export class IDCardService {
     const qrCode = await generateQRCode(qrData);
     const barcode = await generateBarcode(employee.employeeId);
 
-    // Update ID card
     const updated = await prisma.iDCard.update({
       where: { id },
       data: {
@@ -391,21 +377,21 @@ export class IDCardService {
             email: true,
             phone: true,
             avatar: true,
+            companyId: true,
+            company: {
+              select: { id: true, name: true, logo: true },
+            },
             department: {
               select: { id: true, name: true },
             },
             position: {
               select: { id: true, name: true },
             },
-            company: {
-              select: { id: true, name: true, logo: true },
-            },
           },
         },
       },
     });
 
-    // Update employee
     await prisma.employee.update({
       where: { id: employee.id },
       data: {
@@ -414,14 +400,13 @@ export class IDCardService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'IDCard',
         entityId: id,
-        changes: { action: 'regenerated' },
+        changes: JSON.stringify({ action: 'regenerated' }),
         companyId: employee.companyId,
         branchId: employee.branchId || null,
       },
@@ -444,7 +429,6 @@ export class IDCardService {
       throw new ApiError(404, 'ID Card not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -471,14 +455,13 @@ export class IDCardService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'IDCard',
         entityId: id,
-        changes: { isActive },
+        changes: JSON.stringify({ isActive }),
         companyId: idCard.employee.companyId,
       },
     });
@@ -500,7 +483,6 @@ export class IDCardService {
       throw new ApiError(404, 'ID Card not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -514,14 +496,13 @@ export class IDCardService {
 
     await prisma.iDCard.delete({ where: { id } });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'DELETE',
         entity: 'IDCard',
         entityId: id,
-        changes: { deleted: idCard },
+        changes: JSON.stringify({ deleted: idCard }),
         companyId: idCard.employee.companyId,
       },
     });
@@ -545,7 +526,6 @@ export class IDCardService {
       throw new ApiError(404, 'ID Card not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -560,7 +540,6 @@ export class IDCardService {
     const employee = idCard.employee;
 
     if (format === 'pdf') {
-      // Generate PDF
       const pdf = new PDFGenerator({
         title: 'Employee ID Card',
         author: employee.company?.name || 'HRMS',
@@ -570,7 +549,6 @@ export class IDCardService {
         margin: 20,
       });
 
-      // Add company logo if available
       if (employee.company?.logo) {
         try {
           pdf.addImage(employee.company.logo, 80, 80);
@@ -584,7 +562,6 @@ export class IDCardService {
         `Employee ID: ${employee.employeeId}`
       );
 
-      // Add employee details
       pdf.addText(`Name: ${employee.firstName} ${employee.lastName}`, { fontSize: 14, bold: true });
       pdf.addText(`Email: ${employee.email}`);
       pdf.addText(`Phone: ${employee.phone || 'N/A'}`);
@@ -597,19 +574,20 @@ export class IDCardService {
         pdf.addText(`Expiry Date: ${new Date(idCard.expiryDate).toLocaleDateString()}`);
       }
 
-      // Add QR code and barcode
       pdf.addQRCode(idCard.qrCode, 150, 150);
       pdf.addText('Scan QR Code for details', { fontSize: 10, align: 'center' });
 
-      // Add barcode (as image)
       try {
-        // Convert barcode data URL to image and add
-        // We'll use a simple approach: use the barcode string as an image
-        // Since barcode is a data URL, we can add it
-        // We'll need to convert it to buffer
         if (idCard.barcode) {
-          const barcodeBuffer = Buffer.from(idCard.barcode.split(',')[1], 'base64');
-          pdf.addImage(barcodeBuffer, 200, 40);
+          // Convert barcode data URL to buffer and add as image
+          const barcodeBase64 = idCard.barcode.split(',')[1];
+          if (barcodeBase64) {
+            const barcodeBuffer = Buffer.from(barcodeBase64, 'base64');
+            // Add image from buffer by writing to a temp file or using data URL
+            // For simplicity, we can pass the buffer as a data URL
+            const barcodeDataUrl = `data:image/png;base64,${barcodeBuffer.toString('base64')}`;
+            pdf.addImage(barcodeDataUrl, 200, 40);
+          }
         }
       } catch (error) {
         logger.warn('Could not add barcode to PDF:', error);
@@ -619,13 +597,7 @@ export class IDCardService {
 
       return await pdf.generateBuffer();
     } else {
-      // Generate PNG - we can use the QR code as image, but we need to generate a full card design.
-      // For simplicity, we'll generate a simple PNG using QR code and barcode, but we need to render it.
-      // We'll use a simple approach: combine QR and barcode into a single image.
-      // Since we don't have a library to render complex images, we'll return the QR code as PNG.
-      // Actually we can generate a simple canvas-based image, but we'll keep it simple and return QR as PNG.
-      // For production, we'd use a library like sharp or canvas.
-      // We'll just return the QR code as a PNG buffer.
+      // PNG format – generate QR code as PNG
       const qrBuffer = await generateQRCodeAsBuffer(
         JSON.stringify({
           employeeId: employee.employeeId,

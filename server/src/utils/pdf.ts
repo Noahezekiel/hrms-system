@@ -1,8 +1,6 @@
 import PDFDocument from 'pdfkit';
-import { ApiError } from './ApiError';
-import logger from './logger';
 import fs from 'fs';
-import path from 'path';
+import logger from './logger';
 
 export interface PDFOptions {
   title?: string;
@@ -28,7 +26,6 @@ export interface TableColumn {
 export class PDFGenerator {
   private doc: PDFKit.PDFDocument;
   private options: PDFOptions;
-  private currentY: number;
 
   constructor(options: PDFOptions = {}) {
     this.options = {
@@ -59,30 +56,12 @@ export class PDFGenerator {
         Keywords: this.options.keywords?.join(', '),
       },
     });
-
-    this.currentY = this.doc.y;
-  }
-
-  private getPageSize(): { width: number; height: number } {
-    const pageSize = this.options.pageSize || 'A4';
-    if (Array.isArray(pageSize)) {
-      return { width: pageSize[0], height: pageSize[1] };
-    }
-    const standardSizes: Record<string, { width: number; height: number }> = {
-      A4: { width: 595.28, height: 841.89 },
-      A3: { width: 841.89, height: 1190.55 },
-      Letter: { width: 612, height: 792 },
-      Legal: { width: 612, height: 1008 },
-      Tabloid: { width: 792, height: 1224 },
-    };
-    return standardSizes[pageSize] || standardSizes.A4;
   }
 
   addHeader(title: string, subtitle?: string): void {
     const pageWidth = this.doc.page.width;
     const margin = this.options.margin || 50;
 
-    // Add logo if provided
     if (this.options.logo) {
       try {
         const logoPath = this.options.logo;
@@ -117,9 +96,7 @@ export class PDFGenerator {
     }
 
     this.doc.moveDown(1);
-    this.currentY = this.doc.y;
 
-    // Add a horizontal line
     this.doc
       .strokeColor('#e2e8f0')
       .lineWidth(1)
@@ -128,7 +105,6 @@ export class PDFGenerator {
       .stroke();
 
     this.doc.moveDown(1);
-    this.currentY = this.doc.y;
   }
 
   addText(text: string, options?: { fontSize?: number; color?: string; align?: 'left' | 'center' | 'right'; bold?: boolean }) {
@@ -148,8 +124,6 @@ export class PDFGenerator {
         align,
         width: pageWidth - margin * 2,
       });
-
-    this.currentY = this.doc.y;
   }
 
   addTable(columns: TableColumn[], rows: Record<string, any>[], options?: { headerColor?: string; rowColor?: string; altRowColor?: string }) {
@@ -157,7 +131,6 @@ export class PDFGenerator {
     const pageWidth = this.doc.page.width;
     const availableWidth = pageWidth - margin * 2;
 
-    // Calculate column widths if not specified
     let totalWidth = 0;
     let undefinedCount = 0;
     columns.forEach(col => {
@@ -176,7 +149,6 @@ export class PDFGenerator {
       return Math.max(defaultWidth, 60);
     });
 
-    // Adjust to fit exactly
     const totalWidthSum = columnWidths.reduce((a, b) => a + b, 0);
     if (totalWidthSum > availableWidth) {
       const scale = availableWidth / totalWidthSum;
@@ -189,18 +161,15 @@ export class PDFGenerator {
     const rowColor = options?.rowColor || '#f7fafc';
     const altRowColor = options?.altRowColor || '#edf2f7';
 
-    // Draw table header
     let xPos = margin;
     const headerHeight = 30;
     const rowHeight = 25;
 
-    // Header background
     this.doc
       .fillColor(headerColor)
       .rect(xPos, this.doc.y, availableWidth, headerHeight)
       .fill();
 
-    // Header text
     this.doc.fillColor('#ffffff');
     columns.forEach((col, index) => {
       const width = columnWidths[index];
@@ -220,29 +189,22 @@ export class PDFGenerator {
     });
 
     this.doc.y += headerHeight;
-    this.currentY = this.doc.y;
 
-    // Draw rows
     rows.forEach((row, rowIndex) => {
       const isEven = rowIndex % 2 === 0;
       const bgColor = isEven ? rowColor : altRowColor;
 
-      // Check if we need a new page
       if (this.doc.y + rowHeight > this.doc.page.height - margin) {
         this.doc.addPage();
-        this.currentY = margin;
-        // Redraw header on new page
         this.addTableHeader(columns, columnWidths, headerColor);
       }
 
-      // Row background
       const yPos = this.doc.y;
       this.doc
         .fillColor(bgColor)
         .rect(margin, yPos, availableWidth, rowHeight)
         .fill();
 
-      // Row data
       this.doc.fillColor('#2d3748');
       xPos = margin;
       columns.forEach((col, index) => {
@@ -264,7 +226,6 @@ export class PDFGenerator {
       });
 
       this.doc.y += rowHeight;
-      this.currentY = this.doc.y;
     });
   }
 
@@ -297,7 +258,6 @@ export class PDFGenerator {
     });
 
     this.doc.y += 30;
-    this.currentY = this.doc.y;
   }
 
   addFooter(text?: string): void {
@@ -321,7 +281,6 @@ export class PDFGenerator {
 
   addPageBreak(): void {
     this.doc.addPage();
-    this.currentY = this.doc.y;
   }
 
   addImage(imagePath: string, width?: number, height?: number): void {
@@ -332,7 +291,6 @@ export class PDFGenerator {
         valign: 'center',
       });
       this.doc.moveDown(1);
-      this.currentY = this.doc.y;
     } catch (error) {
       logger.warn('Could not add image to PDF:', error);
     }
@@ -348,7 +306,6 @@ export class PDFGenerator {
         valign: 'center',
       });
       this.doc.moveDown(1);
-      this.currentY = this.doc.y;
     } catch (error) {
       logger.warn('Could not add QR code to PDF:', error);
     }
@@ -358,7 +315,7 @@ export class PDFGenerator {
     return new Promise((resolve, reject) => {
       try {
         const chunks: Buffer[] = [];
-        this.doc.on('data', chunk => chunks.push(chunk));
+        this.doc.on('data', (chunk: Buffer) => chunks.push(chunk));
         this.doc.on('end', () => resolve(Buffer.concat(chunks)));
         this.doc.on('error', reject);
         this.doc.end();

@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { IDCardService } from '../services/idCard.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class IDCardController {
   private idCardService: IDCardService;
