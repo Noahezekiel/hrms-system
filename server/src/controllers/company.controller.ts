@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { CompanyService } from '../services/company.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class CompanyController {
   private companyService: CompanyService;

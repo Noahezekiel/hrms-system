@@ -1,8 +1,7 @@
-import { Prisma, Role, User } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
 import bcrypt from 'bcrypt';
-import logger from '../utils/logger';
 
 export interface UserCreateInput {
   email: string;
@@ -44,33 +43,27 @@ export class UserService {
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, companyId: true, branchId: true },
+      select: { role: true, companyId: true, branchId: true, departmentId: true },
     });
 
     if (!currentUser) {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build where clause
     const where: Prisma.UserWhereInput = {};
 
-    // Super admin can see all users; others see only users in their company/branch
     if (currentUser.role !== 'SUPER_ADMIN') {
       where.companyId = currentUser.companyId || undefined;
       if (currentUser.role === 'DEPARTMENT_MANAGER') {
-        // Department managers see only their department
         where.departmentId = currentUser.departmentId || undefined;
       }
       if (currentUser.role === 'STAFF') {
-        // Staff see only themselves
         where.id = userId;
       }
     }
 
-    // Apply filters
     if (search) {
       where.OR = [
         { email: { contains: search, mode: 'insensitive' } },
@@ -95,10 +88,8 @@ export class UserService {
       where.isActive = isActive;
     }
 
-    // Get total count
     const total = await prisma.user.count({ where });
 
-    // Get users
     const users = await prisma.user.findMany({
       where,
       skip,
@@ -184,7 +175,6 @@ export class UserService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: currentUserId },
       select: { role: true, companyId: true, branchId: true, departmentId: true },
@@ -212,7 +202,6 @@ export class UserService {
   async createUser(data: UserCreateInput, currentUserId: string) {
     const { email, password, firstName, lastName, role, companyId, branchId, departmentId, employeeId, isActive } = data;
 
-    // Check if email already exists
     const existingUser = await prisma.user.findUnique({
       where: { email },
     });
@@ -220,7 +209,6 @@ export class UserService {
       throw new ApiError(409, 'User with this email already exists');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: currentUserId },
       select: { role: true, companyId: true, branchId: true },
@@ -230,7 +218,6 @@ export class UserService {
       throw new ApiError(404, 'Current user not found');
     }
 
-    // Validate company/branch access
     if (currentUser.role !== 'SUPER_ADMIN') {
       if (companyId && companyId !== currentUser.companyId) {
         throw new ApiError(403, 'Cannot create user in another company');
@@ -238,20 +225,16 @@ export class UserService {
       if (branchId && branchId !== currentUser.branchId) {
         throw new ApiError(403, 'Cannot create user in another branch');
       }
-      // Only SUPER_ADMIN can create SUPER_ADMIN
       if (role === 'SUPER_ADMIN') {
         throw new ApiError(403, 'Only Super Admin can create Super Admin users');
       }
-      // COMPANY_ADMIN can only be created by SUPER_ADMIN
-      if (role === 'COMPANY_ADMIN' && currentUser.role !== 'SUPER_ADMIN') {
+      if (role === 'COMPANY_ADMIN' && (currentUser.role as string) !== 'SUPER_ADMIN') {
         throw new ApiError(403, 'Only Super Admin can create Company Admin users');
       }
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
     const user = await prisma.user.create({
       data: {
         email,
@@ -280,14 +263,13 @@ export class UserService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId: currentUserId,
         action: 'CREATE',
         entity: 'User',
         entityId: user.id,
-        changes: { data },
+        changes: JSON.stringify({ data }),
       },
     });
 
@@ -295,7 +277,6 @@ export class UserService {
   }
 
   async updateUser(id: string, data: UserUpdateInput, currentUserId: string) {
-    // Check if user exists
     const existingUser = await prisma.user.findUnique({
       where: { id },
     });
@@ -303,17 +284,15 @@ export class UserService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: currentUserId },
-      select: { role: true, companyId: true, branchId: true },
+      select: { role: true, companyId: true, branchId: true, departmentId: true },
     });
 
     if (!currentUser) {
       throw new ApiError(404, 'Current user not found');
     }
 
-    // Cannot modify SUPER_ADMIN unless you are SUPER_ADMIN
     if (existingUser.role === 'SUPER_ADMIN' && currentUser.role !== 'SUPER_ADMIN') {
       throw new ApiError(403, 'Cannot modify Super Admin user');
     }
@@ -328,13 +307,11 @@ export class UserService {
       if (currentUser.role === 'DEPARTMENT_MANAGER' && existingUser.departmentId !== currentUser.departmentId && existingUser.id !== currentUserId) {
         throw new ApiError(403, 'Cannot modify users in other departments');
       }
-      // Cannot promote to SUPER_ADMIN or COMPANY_ADMIN unless SUPER_ADMIN
-      if (data.role && (data.role === 'SUPER_ADMIN' || data.role === 'COMPANY_ADMIN') && currentUser.role !== 'SUPER_ADMIN') {
+      if (data.role && (data.role === 'SUPER_ADMIN' || data.role === 'COMPANY_ADMIN') && (currentUser.role as string) !== 'SUPER_ADMIN') {
         throw new ApiError(403, 'Cannot assign Super Admin or Company Admin role');
       }
     }
 
-    // Prevent email duplication
     if (data.email && data.email !== existingUser.email) {
       const emailExists = await prisma.user.findUnique({
         where: { email: data.email },
@@ -344,7 +321,6 @@ export class UserService {
       }
     }
 
-    // Update user
     const updatedUser = await prisma.user.update({
       where: { id },
       data: {
@@ -373,14 +349,13 @@ export class UserService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId: currentUserId,
         action: 'UPDATE',
         entity: 'User',
         entityId: id,
-        changes: { before: existingUser, after: data },
+        changes: JSON.stringify({ before: existingUser, after: data }),
       },
     });
 
@@ -395,7 +370,6 @@ export class UserService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: currentUserId },
       select: { role: true, companyId: true },
@@ -405,7 +379,6 @@ export class UserService {
       throw new ApiError(404, 'Current user not found');
     }
 
-    // Cannot delete SUPER_ADMIN unless you are SUPER_ADMIN
     if (user.role === 'SUPER_ADMIN' && currentUser.role !== 'SUPER_ADMIN') {
       throw new ApiError(403, 'Cannot delete Super Admin user');
     }
@@ -419,19 +392,17 @@ export class UserService {
       }
     }
 
-    // Delete user (cascade will handle sessions, audit logs, etc.)
     await prisma.user.delete({
       where: { id },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId: currentUserId,
         action: 'DELETE',
         entity: 'User',
         entityId: id,
-        changes: { deletedUser: user },
+        changes: JSON.stringify({ deletedUser: user }),
       },
     });
   }
@@ -444,7 +415,6 @@ export class UserService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: currentUserId },
       select: { role: true, companyId: true },
@@ -474,14 +444,13 @@ export class UserService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId: currentUserId,
         action: 'UPDATE',
         entity: 'User',
         entityId: id,
-        changes: { isActive },
+        changes: JSON.stringify({ isActive }),
       },
     });
 
