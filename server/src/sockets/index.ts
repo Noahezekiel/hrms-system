@@ -1,5 +1,4 @@
 import { Server as SocketServer, Socket } from 'socket.io';
-import { DefaultEventsMap } from 'socket.io/dist/typed-events';
 import { verifyToken } from '../utils/jwt';
 import { prisma } from '../config/database';
 import logger from '../utils/logger';
@@ -19,7 +18,6 @@ declare module 'socket.io' {
 }
 
 export const setupSocketHandlers = (io: SocketServer) => {
-  // Authentication middleware for socket connections
   io.use(async (socket: Socket, next) => {
     try {
       const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.split(' ')[1];
@@ -33,7 +31,6 @@ export const setupSocketHandlers = (io: SocketServer) => {
         return next(new Error('Invalid token'));
       }
 
-      // Fetch user from database
       const user = await prisma.user.findUnique({
         where: { id: decoded.userId },
         select: {
@@ -68,7 +65,6 @@ export const setupSocketHandlers = (io: SocketServer) => {
   io.on('connection', (socket: Socket) => {
     logger.info(`Socket connected: ${socket.id}, User: ${socket.user?.email}`);
 
-    // Join user to their personal room
     if (socket.user) {
       socket.join(`user:${socket.user.userId}`);
       socket.join(`company:${socket.user.companyId || 'global'}`);
@@ -78,7 +74,6 @@ export const setupSocketHandlers = (io: SocketServer) => {
       socket.join(`role:${socket.user.role}`);
     }
 
-    // Join room for attendance events
     socket.on('join-attendance-room', (companyId: string, branchId?: string) => {
       if (companyId) {
         socket.join(`attendance:${companyId}`);
@@ -88,20 +83,17 @@ export const setupSocketHandlers = (io: SocketServer) => {
       }
     });
 
-    // Join room for leave events
     socket.on('join-leave-room', (companyId: string) => {
       if (companyId) {
         socket.join(`leave:${companyId}`);
       }
     });
 
-    // Handle attendance check-in events
     socket.on('attendance:checkin', (data: { employeeId: string; timestamp: string }) => {
       io.emit(`attendance:update:${data.employeeId}`, {
         type: 'CHECK_IN',
         ...data,
       });
-      // Broadcast to company
       if (socket.user?.companyId) {
         io.to(`attendance:${socket.user.companyId}`).emit('attendance:realtime', {
           employeeId: data.employeeId,
@@ -111,7 +103,6 @@ export const setupSocketHandlers = (io: SocketServer) => {
       }
     });
 
-    // Handle attendance check-out events
     socket.on('attendance:checkout', (data: { employeeId: string; timestamp: string }) => {
       io.emit(`attendance:update:${data.employeeId}`, {
         type: 'CHECK_OUT',
@@ -126,11 +117,12 @@ export const setupSocketHandlers = (io: SocketServer) => {
       }
     });
 
-    // Handle break events
     socket.on('attendance:break', (data: { employeeId: string; type: 'IN' | 'OUT'; timestamp: string }) => {
+      const eventType = `BREAK_${data.type}`;
       io.emit(`attendance:update:${data.employeeId}`, {
-        type: `BREAK_${data.type}`,
-        ...data,
+        type: eventType,
+        employeeId: data.employeeId,
+        timestamp: data.timestamp,
       });
       if (socket.user?.companyId) {
         io.to(`attendance:${socket.user.companyId}`).emit('attendance:realtime', {
@@ -141,7 +133,6 @@ export const setupSocketHandlers = (io: SocketServer) => {
       }
     });
 
-    // Leave request events
     socket.on('leave:request', (data: { employeeId: string; leaveId: string; status: string }) => {
       if (socket.user?.companyId) {
         io.to(`leave:${socket.user.companyId}`).emit('leave:update', {
@@ -151,7 +142,6 @@ export const setupSocketHandlers = (io: SocketServer) => {
       }
     });
 
-    // Notification event
     socket.on('notification:send', (data: { userId: string; title: string; message: string }) => {
       io.to(`user:${data.userId}`).emit('notification:receive', {
         ...data,
@@ -159,28 +149,23 @@ export const setupSocketHandlers = (io: SocketServer) => {
       });
     });
 
-    // Handle disconnection
     socket.on('disconnect', () => {
       logger.info(`Socket disconnected: ${socket.id}, User: ${socket.user?.email}`);
     });
 
-    // Error handling
     socket.on('error', (error) => {
       logger.error(`Socket error for ${socket.id}:`, error);
     });
   });
 
-  // Broadcast attendance update to all connected clients
   io.emitAttendanceUpdate = (employeeId: string, data: any) => {
     io.emit(`attendance:update:${employeeId}`, data);
   };
 
-  // Broadcast leave update
   io.emitLeaveUpdate = (companyId: string, data: any) => {
     io.to(`leave:${companyId}`).emit('leave:update', data);
   };
 
-  // Send notification to a specific user
   io.emitNotification = (userId: string, notification: any) => {
     io.to(`user:${userId}`).emit('notification:receive', notification);
   };
@@ -188,7 +173,6 @@ export const setupSocketHandlers = (io: SocketServer) => {
   logger.info('Socket.IO handlers initialized');
 };
 
-// Extend SocketServer interface
 declare module 'socket.io' {
   interface Server {
     emitAttendanceUpdate: (employeeId: string, data: any) => void;

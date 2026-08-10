@@ -236,7 +236,5 @@ cd client && npm run build
 License
 This project is proprietary and confidential. Unauthorized copying or distribution is prohibited.
 
-text
-
-Now I will wait for the next command.
+ PASSWORD 'hrms_password'
 
