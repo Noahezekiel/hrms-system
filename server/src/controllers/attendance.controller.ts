@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { AttendanceService } from '../services/attendance.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class AttendanceController {
   private attendanceService: AttendanceService;

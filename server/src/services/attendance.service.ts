@@ -1,7 +1,6 @@
-import { Prisma, Attendance, AttendanceStatus } from '@prisma/client';
+import { Prisma, AttendanceStatus } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 import { io } from '../index';
 
 export interface CheckInInput {
@@ -62,7 +61,6 @@ export class AttendanceService {
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true, branchId: true, departmentId: true },
@@ -72,10 +70,8 @@ export class AttendanceService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build where clause
     const where: Prisma.AttendanceWhereInput = {};
 
-    // Super admin can see all; others see only their company
     if (currentUser.role !== 'SUPER_ADMIN') {
       where.companyId = currentUser.companyId || undefined;
       if (currentUser.role === 'DEPARTMENT_MANAGER') {
@@ -94,7 +90,6 @@ export class AttendanceService {
       }
     }
 
-    // Apply filters
     if (employeeId) {
       where.employeeId = employeeId;
     }
@@ -116,16 +111,17 @@ export class AttendanceService {
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.date = { ...where.date, lte: end };
+      if (!where.date) {
+        where.date = {};
+      }
+      (where.date as any).lte = end;
     }
     if (status) {
       where.status = status as AttendanceStatus;
     }
 
-    // Get total count
     const total = await prisma.attendance.count({ where });
 
-    // Get attendance records
     const attendance = await prisma.attendance.findMany({
       where,
       skip,
@@ -158,7 +154,6 @@ export class AttendanceService {
       },
     });
 
-    // Calculate summary
     const summary = await this.calculateAttendanceSummary(where);
 
     return {
@@ -235,7 +230,6 @@ export class AttendanceService {
       throw new ApiError(404, 'Attendance record not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true, departmentId: true },
@@ -273,9 +267,8 @@ export class AttendanceService {
   }
 
   async checkIn(input: CheckInInput) {
-    const { employeeId, photo, note, latitude, longitude, userId, ipAddress, userAgent } = input;
+    const { employeeId, photo, note, userId, ipAddress, userAgent } = input;
 
-    // Check if employee exists
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
       include: {
@@ -293,7 +286,6 @@ export class AttendanceService {
       throw new ApiError(403, 'Employee is not active');
     }
 
-    // Check if user has permission
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -305,7 +297,6 @@ export class AttendanceService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Check if already checked in today
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -325,7 +316,6 @@ export class AttendanceService {
       throw new ApiError(409, 'Already checked in today');
     }
 
-    // Get shift for employee
     const employeeShift = await prisma.employeeShift.findFirst({
       where: {
         employeeId,
@@ -343,21 +333,19 @@ export class AttendanceService {
 
     const shift = employeeShift?.shift || null;
 
-    // Determine status based on shift start time
     let status: AttendanceStatus = 'PRESENT';
     const now = new Date();
     if (shift) {
       const [startHour, startMinute] = shift.startTime.split(':').map(Number);
       const shiftStart = new Date(now);
       shiftStart.setHours(startHour, startMinute, 0, 0);
-      const gracePeriodMinutes = 15; // Configurable
+      const gracePeriodMinutes = 15;
       const graceEnd = new Date(shiftStart.getTime() + gracePeriodMinutes * 60000);
       if (now > graceEnd) {
         status = 'LATE';
       }
     }
 
-    // Create attendance record
     const attendance = await prisma.attendance.create({
       data: {
         employeeId,
@@ -369,8 +357,6 @@ export class AttendanceService {
         companyId: employee.companyId,
         branchId: employee.branchId || null,
         notes: note || null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       },
       include: {
         employee: {
@@ -385,14 +371,13 @@ export class AttendanceService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'CHECK_IN',
         entity: 'Attendance',
         entityId: attendance.id,
-        changes: { employeeId, checkIn: attendance.checkIn, status },
+        changes: JSON.stringify({ employeeId, checkIn: attendance.checkIn, status }),
         ipAddress: ipAddress || null,
         userAgent: userAgent || null,
         companyId: employee.companyId,
@@ -400,7 +385,6 @@ export class AttendanceService {
       },
     });
 
-    // Emit socket event
     if (io) {
       io.emitAttendanceUpdate(employeeId, {
         type: 'CHECK_IN',
@@ -418,9 +402,8 @@ export class AttendanceService {
   }
 
   async checkOut(input: CheckOutInput) {
-    const { employeeId, photo, note, latitude, longitude, userId, ipAddress, userAgent } = input;
+    const { employeeId, photo, note, userId, ipAddress, userAgent } = input;
 
-    // Check if employee exists
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
       include: {
@@ -431,7 +414,6 @@ export class AttendanceService {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -443,7 +425,6 @@ export class AttendanceService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Find today's attendance
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -467,7 +448,6 @@ export class AttendanceService {
       throw new ApiError(409, 'Already checked out today');
     }
 
-    // Update attendance with check-out
     const now = new Date();
     const updated = await prisma.attendance.update({
       where: { id: attendance.id },
@@ -475,9 +455,7 @@ export class AttendanceService {
         checkOut: now,
         checkOutPhoto: photo || null,
         notes: note ? (attendance.notes ? attendance.notes + ' ' + note : note) : attendance.notes,
-        updatedAt: new Date(),
         totalHours: this.calculateTotalHours(attendance.checkIn!, now, attendance.breakIn, attendance.breakOut),
-        // Calculate overtime if needed
       },
       include: {
         employee: {
@@ -492,14 +470,13 @@ export class AttendanceService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'CHECK_OUT',
         entity: 'Attendance',
         entityId: updated.id,
-        changes: { employeeId, checkOut: now },
+        changes: JSON.stringify({ employeeId, checkOut: now }),
         ipAddress: ipAddress || null,
         userAgent: userAgent || null,
         companyId: employee.companyId,
@@ -507,7 +484,6 @@ export class AttendanceService {
       },
     });
 
-    // Emit socket event
     if (io) {
       io.emitAttendanceUpdate(employeeId, {
         type: 'CHECK_OUT',
@@ -525,9 +501,8 @@ export class AttendanceService {
   }
 
   async breakIn(input: BreakInput) {
-    const { employeeId, photo, note, userId } = input;
+    const { employeeId, photo, userId } = input;
 
-    // Check if employee exists
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
       include: { company: true },
@@ -536,7 +511,6 @@ export class AttendanceService {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -548,7 +522,6 @@ export class AttendanceService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Find today's attendance
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -572,24 +545,21 @@ export class AttendanceService {
       throw new ApiError(409, 'Break already started');
     }
 
-    // Update attendance with break-in
     const updated = await prisma.attendance.update({
       where: { id: attendance.id },
       data: {
         breakIn: new Date(),
         breakInPhoto: photo || null,
-        updatedAt: new Date(),
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'BREAK_IN',
         entity: 'Attendance',
         entityId: updated.id,
-        changes: { employeeId, breakIn: updated.breakIn },
+        changes: JSON.stringify({ employeeId, breakIn: updated.breakIn }),
         companyId: employee.companyId,
         branchId: employee.branchId || null,
       },
@@ -607,7 +577,7 @@ export class AttendanceService {
   }
 
   async breakOut(input: BreakInput) {
-    const { employeeId, photo, note, userId } = input;
+    const { employeeId, photo, userId } = input;
 
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
@@ -660,7 +630,6 @@ export class AttendanceService {
       data: {
         breakOut: new Date(),
         breakOutPhoto: photo || null,
-        updatedAt: new Date(),
         totalHours: this.calculateTotalHours(
           attendance.checkIn!,
           attendance.checkOut || new Date(),
@@ -676,7 +645,7 @@ export class AttendanceService {
         action: 'BREAK_OUT',
         entity: 'Attendance',
         entityId: updated.id,
-        changes: { employeeId, breakOut: updated.breakOut },
+        changes: JSON.stringify({ employeeId, breakOut: updated.breakOut }),
         companyId: employee.companyId,
         branchId: employee.branchId || null,
       },
@@ -786,7 +755,6 @@ export class AttendanceService {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true, departmentId: true },
@@ -805,13 +773,16 @@ export class AttendanceService {
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.date = { ...where.date, lte: end };
+      if (!where.date) {
+        where.date = {};
+      }
+      (where.date as any).lte = end;
     }
 
     return this.calculateAttendanceSummary(where);
   }
 
-  async getAttendanceStats(params: {
+    async getAttendanceStats(params: {
     companyId?: string;
     branchId?: string;
     startDate?: string;
@@ -828,34 +799,44 @@ export class AttendanceService {
       throw new ApiError(404, 'User not found');
     }
 
-    const where: Prisma.AttendanceWhereInput = {};
+    // Build where for attendance
+    const attendanceWhere: Prisma.AttendanceWhereInput = {};
     if (companyId) {
       if (currentUser.role !== 'SUPER_ADMIN' && companyId !== currentUser.companyId) {
         throw new ApiError(403, 'Access denied');
       }
-      where.companyId = companyId;
+      attendanceWhere.companyId = companyId;
     } else if (currentUser.role !== 'SUPER_ADMIN') {
-      where.companyId = currentUser.companyId || undefined;
+      attendanceWhere.companyId = currentUser.companyId || undefined;
     }
     if (branchId) {
-      where.branchId = branchId;
+      attendanceWhere.branchId = branchId;
     }
     if (startDate) {
-      where.date = { gte: new Date(startDate) };
+      attendanceWhere.date = { gte: new Date(startDate) };
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.date = { ...where.date, lte: end };
+      if (!attendanceWhere.date) {
+        attendanceWhere.date = {};
+      }
+      (attendanceWhere.date as any).lte = end;
     }
 
-    const attendances = await prisma.attendance.findMany({ where });
+    // Build where for employee count
+    const employeeWhere: Prisma.EmployeeWhereInput = {};
+    if (attendanceWhere.companyId) {
+      employeeWhere.companyId = attendanceWhere.companyId as string;
+    }
+    if (attendanceWhere.branchId) {
+      employeeWhere.branchId = attendanceWhere.branchId as string;
+    }
+    employeeWhere.isActive = true;
+
+    const attendances = await prisma.attendance.findMany({ where: attendanceWhere });
     const totalEmployees = await prisma.employee.count({
-      where: {
-        companyId: where.companyId || undefined,
-        branchId: where.branchId || undefined,
-        isActive: true,
-      },
+      where: employeeWhere,
     });
 
     const presentToday = attendances.filter(a => a.status === 'PRESENT').length;
@@ -896,7 +877,6 @@ export class AttendanceService {
     const dateObj = new Date(date);
     dateObj.setHours(0, 0, 0, 0);
 
-    // Check if attendance already exists for this date
     const existing = await prisma.attendance.findFirst({
       where: {
         employeeId,
@@ -923,8 +903,6 @@ export class AttendanceService {
         notes,
         companyId: employee.companyId,
         branchId: employee.branchId || null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       },
     });
 
@@ -934,7 +912,7 @@ export class AttendanceService {
         action: 'CREATE',
         entity: 'Attendance',
         entityId: attendance.id,
-        changes: { input },
+        changes: JSON.stringify({ input }),
         companyId: employee.companyId,
         branchId: employee.branchId || null,
       },
@@ -975,7 +953,6 @@ export class AttendanceService {
         isOvertime: data.isOvertime,
         overtimeHours: data.overtimeHours,
         totalHours: data.totalHours,
-        updatedAt: new Date(),
       },
     });
 
@@ -985,7 +962,7 @@ export class AttendanceService {
         action: 'UPDATE',
         entity: 'Attendance',
         entityId: id,
-        changes: { before: attendance, after: data },
+        changes: JSON.stringify({ before: attendance, after: data }),
         companyId: attendance.companyId,
         branchId: attendance.branchId || null,
       },
@@ -1021,7 +998,7 @@ export class AttendanceService {
         action: 'DELETE',
         entity: 'Attendance',
         entityId: id,
-        changes: { deleted: attendance },
+        changes: JSON.stringify({ deleted: attendance }),
         companyId: attendance.companyId,
         branchId: attendance.branchId || null,
       },
@@ -1055,7 +1032,6 @@ export class AttendanceService {
         isOvertime: true,
         overtimeHours,
         notes: notes ? (attendance.notes ? attendance.notes + ' ' + notes : notes) : attendance.notes,
-        updatedAt: new Date(),
       },
     });
 
@@ -1066,7 +1042,7 @@ export class AttendanceService {
           action: 'UPDATE',
           entity: 'Attendance',
           entityId: id,
-          changes: { overtimeHours, notes },
+          changes: JSON.stringify({ overtimeHours, notes }),
           companyId: attendance.companyId,
           branchId: attendance.branchId || null,
         },
@@ -1115,7 +1091,10 @@ export class AttendanceService {
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.date = { ...where.date, lte: end };
+      if (!where.date) {
+        where.date = {};
+      }
+      (where.date as any).lte = end;
     }
 
     const records = await prisma.attendance.findMany({
