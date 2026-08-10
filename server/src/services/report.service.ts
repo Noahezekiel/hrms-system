@@ -3,7 +3,6 @@ import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
 import { PDFGenerator } from '../utils/pdf';
 import { generateExcelBuffer } from '../utils/excel';
-import logger from '../utils/logger';
 
 export class ReportService {
   async getAttendanceReport(params: {
@@ -17,7 +16,6 @@ export class ReportService {
   }) {
     const { companyId, branchId, departmentId, startDate, endDate, format, userId } = params;
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -41,13 +39,19 @@ export class ReportService {
     if (departmentId) {
       where.employee = { departmentId };
     }
+
+    // Build date filter
+    const dateFilter: any = {};
     if (startDate) {
-      where.date = { gte: new Date(startDate) };
+      dateFilter.gte = new Date(startDate);
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.date = { ...where.date, lte: end };
+      dateFilter.lte = end;
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      where.date = dateFilter;
     }
 
     const attendances = await prisma.attendance.findMany({
@@ -79,7 +83,6 @@ export class ReportService {
       orderBy: { date: 'desc' },
     });
 
-    // Prepare data for export
     const reportData = attendances.map(a => ({
       'Employee ID': a.employee?.employeeId || 'N/A',
       'Employee Name': a.employee ? `${a.employee.firstName} ${a.employee.lastName}` : 'N/A',
@@ -186,13 +189,19 @@ export class ReportService {
     if (departmentId) {
       where.departmentId = departmentId;
     }
+
+    // Build date filter
+    const dateFilter: any = {};
     if (startDate) {
-      where.startDate = { gte: new Date(startDate) };
+      dateFilter.gte = new Date(startDate);
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.endDate = { lte: end };
+      dateFilter.lte = end;
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      where.startDate = dateFilter;
     }
 
     const leaveRequests = await prisma.leaveRequest.findMany({
@@ -245,7 +254,7 @@ export class ReportService {
     }));
 
     if (format === 'pdf') {
-      return this.generateLeavePDF(reportData, { companyId, branchId, departmentId, startDate, endDate });
+      return this.generateLeavePDF(reportData);
     } else if (format === 'excel') {
       return this.generateLeaveExcel(reportData);
     }
@@ -253,7 +262,7 @@ export class ReportService {
     return reportData;
   }
 
-  private async generateLeavePDF(data: any[], filters: any): Promise<Buffer> {
+  private async generateLeavePDF(data: any[]): Promise<Buffer> {
     const pdf = new PDFGenerator({
       title: 'Leave Report',
       author: 'HRMS',
@@ -377,7 +386,7 @@ export class ReportService {
     }));
 
     if (format === 'pdf') {
-      return this.generateEmployeePDF(reportData, { companyId, branchId, departmentId, isActive });
+      return this.generateEmployeePDF(reportData);
     } else if (format === 'excel') {
       return this.generateEmployeeExcel(reportData);
     }
@@ -385,7 +394,7 @@ export class ReportService {
     return reportData;
   }
 
-  private async generateEmployeePDF(data: any[], filters: any): Promise<Buffer> {
+  private async generateEmployeePDF(data: any[]): Promise<Buffer> {
     const pdf = new PDFGenerator({
       title: 'Employee Report',
       author: 'HRMS',
@@ -453,13 +462,19 @@ export class ReportService {
     if (departmentId) {
       where.employee = { departmentId };
     }
+
+    // Build date filter
+    const dateFilter: any = {};
     if (startDate) {
-      where.date = { gte: new Date(startDate) };
+      dateFilter.gte = new Date(startDate);
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.date = { ...where.date, lte: end };
+      dateFilter.lte = end;
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      where.date = dateFilter;
     }
 
     const overtimeRecords = await prisma.attendance.findMany({
@@ -506,7 +521,7 @@ export class ReportService {
     }));
 
     if (format === 'pdf') {
-      return this.generateOvertimePDF(reportData, { companyId, branchId, departmentId, startDate, endDate });
+      return this.generateOvertimePDF(reportData);
     } else if (format === 'excel') {
       return this.generateOvertimeExcel(reportData);
     }
@@ -514,7 +529,7 @@ export class ReportService {
     return reportData;
   }
 
-  private async generateOvertimePDF(data: any[], filters: any): Promise<Buffer> {
+  private async generateOvertimePDF(data: any[]): Promise<Buffer> {
     const pdf = new PDFGenerator({
       title: 'Overtime Report',
       author: 'HRMS',
@@ -608,7 +623,7 @@ export class ReportService {
     }));
 
     if (format === 'pdf') {
-      return this.generateHolidayPDF(reportData, { companyId, branchId, year });
+      return this.generateHolidayPDF(reportData);
     } else if (format === 'excel') {
       return this.generateHolidayExcel(reportData);
     }
@@ -616,7 +631,7 @@ export class ReportService {
     return reportData;
   }
 
-  private async generateHolidayPDF(data: any[], filters: any): Promise<Buffer> {
+  private async generateHolidayPDF(data: any[]): Promise<Buffer> {
     const pdf = new PDFGenerator({
       title: 'Holiday Report',
       author: 'HRMS',

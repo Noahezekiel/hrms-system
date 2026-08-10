@@ -298,7 +298,6 @@ export class PDFGenerator {
 
   addQRCode(qrCodeDataURL: string, width?: number, height?: number): void {
     try {
-      // QR code is expected to be a data URL
       const imageBuffer = Buffer.from(qrCodeDataURL.split(',')[1], 'base64');
       this.doc.image(imageBuffer, {
         fit: [width || 150, height || 150],

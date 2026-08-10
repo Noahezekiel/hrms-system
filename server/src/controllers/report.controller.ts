@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { ReportService } from '../services/report.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class ReportController {
   private reportService: ReportService;
