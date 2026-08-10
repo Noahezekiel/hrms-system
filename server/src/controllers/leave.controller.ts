@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { LeaveService } from '../services/leave.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class LeaveController {
   private leaveService: LeaveService;

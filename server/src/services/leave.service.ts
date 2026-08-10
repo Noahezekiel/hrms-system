@@ -1,7 +1,6 @@
-import { Prisma, LeaveRequest, LeaveStatus, LeaveType } from '@prisma/client';
+import { Prisma, LeaveStatus, LeaveType } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 import { io } from '../index';
 
 export interface LeaveCreateInput {
@@ -41,20 +40,17 @@ export class LeaveService {
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, companyId: true, branchId: true, departmentId: true },
+      select: { role: true, companyId: true, branchId: true, departmentId: true, employeeId: true },
     });
 
     if (!currentUser) {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build where clause
     const where: Prisma.LeaveRequestWhereInput = {};
 
-    // Super admin can see all; others see only their company
     if (currentUser.role !== 'SUPER_ADMIN') {
       where.companyId = currentUser.companyId || undefined;
       if (currentUser.role === 'DEPARTMENT_MANAGER') {
@@ -73,7 +69,6 @@ export class LeaveService {
       }
     }
 
-    // Apply filters
     if (employeeId) {
       where.employeeId = employeeId;
     }
@@ -101,13 +96,15 @@ export class LeaveService {
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.endDate = { lte: end };
+      if (!where.startDate) {
+        where.endDate = { lte: end };
+      } else {
+        where.endDate = { lte: end };
+      }
     }
 
-    // Get total count
     const total = await prisma.leaveRequest.count({ where });
 
-    // Get leave requests
     const leaveRequests = await prisma.leaveRequest.findMany({
       where,
       skip,
@@ -142,7 +139,6 @@ export class LeaveService {
       },
     });
 
-    // Calculate summary
     const summary = await this.calculateLeaveSummary(where);
 
     return {
@@ -212,10 +208,9 @@ export class LeaveService {
       throw new ApiError(404, 'Leave request not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, companyId: true, departmentId: true },
+      select: { role: true, companyId: true, departmentId: true, employeeId: true },
     });
 
     if (!currentUser) {
@@ -246,7 +241,6 @@ export class LeaveService {
   async createLeaveRequest(data: LeaveCreateInput, userId: string) {
     const { employeeId, leaveType, startDate, endDate, reason, companyId, branchId, departmentId } = data;
 
-    // Check if employee exists
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
       include: { company: true },
@@ -255,7 +249,6 @@ export class LeaveService {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -267,7 +260,6 @@ export class LeaveService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Validate dates
     const start = new Date(startDate);
     const end = new Date(endDate);
     if (start > end) {
@@ -277,10 +269,8 @@ export class LeaveService {
       throw new ApiError(400, 'Cannot apply for leave in the past');
     }
 
-    // Calculate total days (business days or calendar days?)
     const totalDays = this.calculateLeaveDays(start, end);
 
-    // Check if there are overlapping leave requests
     const overlapping = await prisma.leaveRequest.findFirst({
       where: {
         employeeId,
@@ -297,10 +287,6 @@ export class LeaveService {
       throw new ApiError(409, 'Overlapping leave request exists');
     }
 
-    // Check leave balance (optional - implement based on settings)
-    // This would depend on company policy
-
-    // Create leave request
     const leaveRequest = await prisma.leaveRequest.create({
       data: {
         employeeId,
@@ -313,8 +299,6 @@ export class LeaveService {
         companyId: companyId || employee.companyId,
         branchId: branchId || employee.branchId,
         departmentId: departmentId || employee.departmentId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       },
       include: {
         employee: {
@@ -328,20 +312,18 @@ export class LeaveService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'CREATE',
         entity: 'LeaveRequest',
         entityId: leaveRequest.id,
-        changes: { data },
+        changes: JSON.stringify({ data }),
         companyId: leaveRequest.companyId,
         branchId: leaveRequest.branchId || null,
       },
     });
 
-    // Emit socket event
     if (io) {
       io.emitLeaveUpdate(leaveRequest.companyId, {
         type: 'LEAVE_CREATED',
@@ -359,10 +341,8 @@ export class LeaveService {
   }
 
   private calculateLeaveDays(start: Date, end: Date): number {
-    // Calculate total days including both start and end
     const diffTime = Math.abs(end.getTime() - start.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    return diffDays;
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
   }
 
   async updateLeaveRequest(id: string, data: LeaveUpdateInput, userId: string) {
@@ -374,15 +354,13 @@ export class LeaveService {
       throw new ApiError(404, 'Leave request not found');
     }
 
-    // Only allow updates if status is PENDING
     if (existing.status !== 'PENDING') {
       throw new ApiError(400, 'Cannot update a leave request that is not pending');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, companyId: true },
+      select: { role: true, companyId: true, employeeId: true },
     });
     if (!currentUser) {
       throw new ApiError(404, 'User not found');
@@ -390,7 +368,6 @@ export class LeaveService {
     if (currentUser.role !== 'SUPER_ADMIN' && existing.companyId !== currentUser.companyId) {
       throw new ApiError(403, 'Access denied');
     }
-    // Staff can only update their own leave requests
     if (currentUser.role === 'STAFF') {
       const currentEmployee = await prisma.employee.findFirst({
         where: { user: { id: userId } },
@@ -401,7 +378,6 @@ export class LeaveService {
       }
     }
 
-    // Validate dates if provided
     let totalDays = existing.totalDays;
     if (data.startDate || data.endDate) {
       const start = data.startDate ? new Date(data.startDate) : existing.startDate;
@@ -411,7 +387,6 @@ export class LeaveService {
       }
       totalDays = this.calculateLeaveDays(start, end);
 
-      // Check for overlapping requests
       const overlapping = await prisma.leaveRequest.findFirst({
         where: {
           employeeId: existing.employeeId,
@@ -430,7 +405,6 @@ export class LeaveService {
       }
     }
 
-    // Update leave request
     const updated = await prisma.leaveRequest.update({
       where: { id },
       data: {
@@ -440,7 +414,6 @@ export class LeaveService {
         totalDays,
         reason: data.reason,
         status: data.status,
-        updatedAt: new Date(),
       },
       include: {
         employee: {
@@ -454,14 +427,13 @@ export class LeaveService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'LeaveRequest',
         entityId: id,
-        changes: { before: existing, after: data },
+        changes: JSON.stringify({ before: existing, after: data }),
         companyId: existing.companyId,
         branchId: existing.branchId || null,
       },
@@ -470,7 +442,7 @@ export class LeaveService {
     return updated;
   }
 
-  async approveLeaveRequest(id: string, approvedBy: string, notes?: string, userId?: string) {
+  async approveLeaveRequest(id: string, approvedBy: string, _notes?: string, userId?: string) {
     const leaveRequest = await prisma.leaveRequest.findUnique({
       where: { id },
       include: { employee: true },
@@ -483,7 +455,6 @@ export class LeaveService {
       throw new ApiError(400, 'Leave request is not pending');
     }
 
-    // Check permissions if userId provided
     if (userId) {
       const currentUser = await prisma.user.findUnique({
         where: { id: userId },
@@ -503,8 +474,6 @@ export class LeaveService {
         status: 'APPROVED',
         approvedBy: approvedBy || userId,
         approvedAt: new Date(),
-        updatedAt: new Date(),
-        // Note: could add notes field if needed
       },
       include: {
         employee: {
@@ -525,7 +494,7 @@ export class LeaveService {
           action: 'APPROVE',
           entity: 'LeaveRequest',
           entityId: id,
-          changes: { status: 'APPROVED', approvedBy },
+          changes: JSON.stringify({ status: 'APPROVED', approvedBy }),
           companyId: leaveRequest.companyId,
           branchId: leaveRequest.branchId || null,
         },
@@ -543,7 +512,6 @@ export class LeaveService {
         },
         timestamp: new Date().toISOString(),
       });
-      // Notify the employee
       const employeeUser = await prisma.user.findFirst({
         where: { employeeId: leaveRequest.employeeId },
       });
@@ -573,7 +541,6 @@ export class LeaveService {
       throw new ApiError(400, 'Leave request is not pending');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -590,7 +557,6 @@ export class LeaveService {
       data: {
         status: 'REJECTED',
         rejectedReason: rejectedReason || null,
-        updatedAt: new Date(),
       },
       include: {
         employee: {
@@ -610,7 +576,7 @@ export class LeaveService {
         action: 'REJECT',
         entity: 'LeaveRequest',
         entityId: id,
-        changes: { status: 'REJECTED', rejectedReason },
+        changes: JSON.stringify({ status: 'REJECTED', rejectedReason }),
         companyId: leaveRequest.companyId,
         branchId: leaveRequest.branchId || null,
       },
@@ -627,7 +593,6 @@ export class LeaveService {
         },
         timestamp: new Date().toISOString(),
       });
-      // Notify the employee
       const employeeUser = await prisma.user.findFirst({
         where: { employeeId: leaveRequest.employeeId },
       });
@@ -653,15 +618,13 @@ export class LeaveService {
       throw new ApiError(404, 'Leave request not found');
     }
 
-    // Only allow cancellation if PENDING or APPROVED
     if (leaveRequest.status === 'REJECTED') {
       throw new ApiError(400, 'Cannot cancel a rejected leave request');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, companyId: true },
+      select: { role: true, companyId: true, employeeId: true },
     });
     if (!currentUser) {
       throw new ApiError(404, 'User not found');
@@ -669,7 +632,6 @@ export class LeaveService {
     if (currentUser.role !== 'SUPER_ADMIN' && leaveRequest.companyId !== currentUser.companyId) {
       throw new ApiError(403, 'Access denied');
     }
-    // Staff can only cancel their own
     if (currentUser.role === 'STAFF') {
       const currentEmployee = await prisma.employee.findFirst({
         where: { user: { id: userId } },
@@ -684,7 +646,6 @@ export class LeaveService {
       where: { id },
       data: {
         status: 'CANCELLED',
-        updatedAt: new Date(),
       },
     });
 
@@ -694,7 +655,7 @@ export class LeaveService {
         action: 'CANCEL',
         entity: 'LeaveRequest',
         entityId: id,
-        changes: { status: 'CANCELLED' },
+        changes: JSON.stringify({ status: 'CANCELLED' }),
         companyId: leaveRequest.companyId,
         branchId: leaveRequest.branchId || null,
       },
@@ -725,7 +686,6 @@ export class LeaveService {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -737,13 +697,10 @@ export class LeaveService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Get leave settings from company settings or global
-    // For now, use defaults
     const annualLeaveMax = 20;
     const sickLeaveMax = 10;
     const casualLeaveMax = 5;
 
-    // Calculate used leave
     const usedLeave = await prisma.leaveRequest.aggregate({
       where: {
         employeeId,
@@ -752,7 +709,7 @@ export class LeaveService {
           in: ['ANNUAL', 'SICK', 'CASUAL'],
         },
         startDate: {
-          gte: new Date(new Date().getFullYear(), 0, 1), // start of current year
+          gte: new Date(new Date().getFullYear(), 0, 1),
         },
       },
       _sum: {
@@ -760,7 +717,6 @@ export class LeaveService {
       },
     });
 
-    // Calculate pending leave (days that will be consumed if approved)
     const pendingLeave = await prisma.leaveRequest.aggregate({
       where: {
         employeeId,
@@ -786,7 +742,7 @@ export class LeaveService {
       },
       sick: {
         total: sickLeaveMax,
-        used: 0, // would need separate tracking for sick leave
+        used: 0,
         pending: 0,
         available: sickLeaveMax,
       },
@@ -850,7 +806,6 @@ export class LeaveService {
     const cancelled = requests.filter(r => r.status === 'CANCELLED').length;
     const totalDays = requests.reduce((sum, r) => sum + r.totalDays, 0);
 
-    // Group by leave type
     const byLeaveType = requests.reduce((acc, r) => {
       const type = r.leaveType;
       if (!acc[type]) acc[type] = { count: 0, days: 0 };
@@ -878,15 +833,13 @@ export class LeaveService {
       throw new ApiError(404, 'Leave request not found');
     }
 
-    // Only allow deletion if PENDING or CANCELLED
     if (leaveRequest.status === 'APPROVED' || leaveRequest.status === 'REJECTED') {
       throw new ApiError(400, 'Cannot delete a leave request that is approved or rejected');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, companyId: true },
+      select: { role: true, companyId: true, employeeId: true },
     });
     if (!currentUser) {
       throw new ApiError(404, 'User not found');
@@ -912,7 +865,7 @@ export class LeaveService {
         action: 'DELETE',
         entity: 'LeaveRequest',
         entityId: id,
-        changes: { deleted: leaveRequest },
+        changes: JSON.stringify({ deleted: leaveRequest }),
         companyId: leaveRequest.companyId,
         branchId: leaveRequest.branchId || null,
       },

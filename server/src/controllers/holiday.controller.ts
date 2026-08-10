@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { HolidayService } from '../services/holiday.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class HolidayController {
   private holidayService: HolidayService;
