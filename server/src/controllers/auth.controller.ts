@@ -1,12 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/auth.service';
-import {
-  registerSchema,
-  loginSchema,
-  refreshTokenSchema,
+import { 
+  registerSchema, 
+  loginSchema, 
+  refreshTokenSchema, 
   changePasswordSchema,
   forgotPasswordSchema,
-  resetPasswordSchema,
+  resetPasswordSchema 
 } from '../validation/auth.validation';
 
 export class AuthController {
@@ -20,7 +20,7 @@ export class AuthController {
     try {
       const validatedData = registerSchema.parse(req.body);
       const result = await this.authService.register(validatedData);
-
+      
       res.status(201).json({
         success: true,
         message: 'User registered successfully',
@@ -35,7 +35,7 @@ export class AuthController {
     try {
       const validatedData = loginSchema.parse(req.body);
       const { user, accessToken, refreshToken } = await this.authService.login(validatedData);
-
+      
       res.status(200).json({
         success: true,
         message: 'Login successful',
@@ -54,7 +54,7 @@ export class AuthController {
     try {
       const validatedData = refreshTokenSchema.parse(req.body);
       const result = await this.authService.refreshToken(validatedData.refreshToken);
-
+      
       res.status(200).json({
         success: true,
         message: 'Token refreshed successfully',
@@ -69,7 +69,7 @@ export class AuthController {
     try {
       const { refreshToken } = req.body;
       await this.authService.logout(refreshToken, req.userId!);
-
+      
       res.status(200).json({
         success: true,
         message: 'Logged out successfully',
@@ -83,7 +83,7 @@ export class AuthController {
     try {
       const validatedData = changePasswordSchema.parse(req.body);
       await this.authService.changePassword(req.userId!, validatedData);
-
+      
       res.status(200).json({
         success: true,
         message: 'Password changed successfully',
@@ -97,7 +97,7 @@ export class AuthController {
     try {
       const validatedData = forgotPasswordSchema.parse(req.body);
       await this.authService.forgotPassword(validatedData.email);
-
+      
       res.status(200).json({
         success: true,
         message: 'Password reset link sent to your email',
@@ -111,7 +111,7 @@ export class AuthController {
     try {
       const validatedData = resetPasswordSchema.parse(req.body);
       await this.authService.resetPassword(validatedData);
-
+      
       res.status(200).json({
         success: true,
         message: 'Password reset successfully',
@@ -124,7 +124,7 @@ export class AuthController {
   me = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = await this.authService.getProfile(req.userId!);
-
+      
       res.status(200).json({
         success: true,
         data: user,
