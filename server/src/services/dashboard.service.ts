@@ -1,7 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class DashboardService {
   async getOverview(params: {
@@ -12,7 +11,6 @@ export class DashboardService {
   }) {
     const { companyId, branchId, period, userId } = params;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -21,24 +19,21 @@ export class DashboardService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build filter conditions
-    const whereCompany: Prisma.CompanyWhereInput = {};
     const whereEmployee: Prisma.EmployeeWhereInput = {};
     const whereAttendance: Prisma.AttendanceWhereInput = {};
     const whereLeave: Prisma.LeaveRequestWhereInput = {};
 
     if (currentUser.role !== 'SUPER_ADMIN') {
-      whereCompany.id = currentUser.companyId || undefined;
-      whereEmployee.companyId = currentUser.companyId || undefined;
-      whereAttendance.companyId = currentUser.companyId || undefined;
-      whereLeave.companyId = currentUser.companyId || undefined;
+      const compId = currentUser.companyId || undefined;
+      whereEmployee.companyId = compId;
+      whereAttendance.companyId = compId;
+      whereLeave.companyId = compId;
     }
 
     if (companyId) {
       if (currentUser.role !== 'SUPER_ADMIN' && companyId !== currentUser.companyId) {
         throw new ApiError(403, 'Access denied');
       }
-      whereCompany.id = companyId;
       whereEmployee.companyId = companyId;
       whereAttendance.companyId = companyId;
       whereLeave.companyId = companyId;
@@ -50,7 +45,6 @@ export class DashboardService {
       whereLeave.branchId = branchId;
     }
 
-    // Get date range for period
     const now = new Date();
     let startDate: Date;
     let previousStartDate: Date;
@@ -83,12 +77,10 @@ export class DashboardService {
         break;
     }
 
-    // Get employee count
     const totalEmployees = await prisma.employee.count({
       where: whereEmployee,
     });
 
-    // Get active employees
     const activeEmployees = await prisma.employee.count({
       where: {
         ...whereEmployee,
@@ -96,7 +88,6 @@ export class DashboardService {
       },
     });
 
-    // Get attendance for current period
     const attendanceWhereCurrent: Prisma.AttendanceWhereInput = {
       ...whereAttendance,
       date: {
@@ -115,7 +106,6 @@ export class DashboardService {
     const late = attendanceCurrent.filter(a => a.status === 'LATE').length;
     const halfDay = attendanceCurrent.filter(a => a.status === 'HALF_DAY').length;
 
-    // Get attendance for previous period
     const attendanceWherePrevious: Prisma.AttendanceWhereInput = {
       ...whereAttendance,
       date: {
@@ -130,11 +120,9 @@ export class DashboardService {
 
     const totalAttendancePrevious = attendancePrevious.length;
 
-    // Calculate attendance rate
     const attendanceRate = totalEmployees > 0 ? Math.round((totalAttendance / totalEmployees) * 100) : 0;
     const previousAttendanceRate = totalEmployees > 0 ? Math.round((totalAttendancePrevious / totalEmployees) * 100) : 0;
 
-    // Get leave stats
     const leaveWhere: Prisma.LeaveRequestWhereInput = {
       ...whereLeave,
       status: 'PENDING',
@@ -158,7 +146,6 @@ export class DashboardService {
       },
     });
 
-    // Get overtime stats for current period
     const overtimeWhere = {
       ...whereAttendance,
       isOvertime: true,
@@ -174,15 +161,17 @@ export class DashboardService {
 
     const totalOvertimeHours = overtimeRecords.reduce((sum, a) => sum + (a.overtimeHours || 0), 0);
 
-    // Get department distribution
-    const departmentStats = await prisma.department.findMany({
+    // Get departments with employee count - use type assertion for the where clause
+    const deptWhere: any = {};
+    if (whereEmployee.companyId) {
+      deptWhere.companyId = whereEmployee.companyId;
+    }
+    const departments = await prisma.department.findMany({
       where: {
-        companyId: whereEmployee.companyId || undefined,
+        ...deptWhere,
         isActive: true,
       },
-      select: {
-        id: true,
-        name: true,
+      include: {
         _count: {
           select: {
             employees: true,
@@ -191,15 +180,14 @@ export class DashboardService {
       },
     });
 
-    const departmentDistribution = departmentStats.map(d => ({
+    const departmentDistribution = departments.map(d => ({
       name: d.name,
-      count: d._count.employees,
+      count: (d as any)._count.employees,
     }));
 
-    // Calculate trends
     const trend = {
       attendance: attendanceRate - previousAttendanceRate,
-      employees: activeEmployees - (totalEmployees - activeEmployees), // simple growth indicator
+      employees: activeEmployees - (totalEmployees - activeEmployees),
       leave: pendingLeaveRequests - (pendingLeaveRequests - approvedLeaveRequests) / 2,
     };
 
@@ -276,7 +264,6 @@ export class DashboardService {
       orderBy: { date: 'asc' },
     });
 
-    // Group by date
     const chartData = attendances.reduce((acc, a) => {
       const dateKey = a.date.toISOString().split('T')[0];
       if (!acc[dateKey]) {
@@ -367,7 +354,7 @@ export class DashboardService {
     });
 
     const result = departments.map(dept => {
-      const totalEmployees = dept._count.employees;
+      const totalEmployees = (dept as any)._count.employees;
       const presentToday = dept.employees.filter(emp =>
         emp.attendance.some(a => a.status === 'PRESENT')
       ).length;
@@ -432,16 +419,9 @@ export class DashboardService {
             avatar: true,
           },
         },
-        company: {
-          select: { id: true, name: true },
-        },
-        branch: {
-          select: { id: true, name: true },
-        },
       },
     });
 
-    // Also get recent check-ins/outs
     const attendanceWhere: Prisma.AttendanceWhereInput = {};
     if (currentUser.role !== 'SUPER_ADMIN') {
       attendanceWhere.companyId = currentUser.companyId || undefined;
@@ -476,28 +456,27 @@ export class DashboardService {
       },
     });
 
-    // Combine and sort by time
     const activities = [
       ...auditLogs.map(log => ({
-        type: 'audit',
+        type: 'audit' as const,
         id: log.id,
         user: log.user,
         action: log.action,
         entity: log.entity,
         createdAt: log.createdAt,
-        company: log.company,
-        branch: log.branch,
+        companyId: log.companyId,
+        branchId: log.branchId,
       })),
       ...recentAttendance.map(att => ({
-        type: 'attendance',
+        type: 'attendance' as const,
         id: att.id,
         employee: att.employee,
         action: att.checkIn && !att.checkOut ? 'CHECK_IN' : att.checkOut ? 'CHECK_OUT' : 'UNKNOWN',
         checkIn: att.checkIn,
         checkOut: att.checkOut,
         createdAt: att.updatedAt,
-        company: att.companyId,
-        branch: att.branchId,
+        companyId: att.companyId,
+        branchId: att.branchId,
       })),
     ];
 
@@ -554,7 +533,6 @@ export class DashboardService {
 
     const totalDays = leaveRequests.reduce((sum, l) => sum + l.totalDays, 0);
 
-    // By leave type
     const byType = leaveRequests.reduce((acc, l) => {
       const type = l.leaveType;
       if (!acc[type]) acc[type] = { count: 0, days: 0 };
@@ -607,20 +585,20 @@ export class DashboardService {
     const active = await prisma.employee.count({ where: { ...where, isActive: true } });
     const inactive = total - active;
 
-    // By gender
     const male = await prisma.employee.count({ where: { ...where, gender: 'MALE' } });
     const female = await prisma.employee.count({ where: { ...where, gender: 'FEMALE' } });
     const other = await prisma.employee.count({ where: { ...where, gender: 'OTHER' } });
 
-    // By department
+    const deptWhere: any = {};
+    if (where.companyId) {
+      deptWhere.companyId = where.companyId;
+    }
     const departments = await prisma.department.findMany({
       where: {
-        companyId: where.companyId || undefined,
+        ...deptWhere,
         isActive: true,
       },
-      select: {
-        id: true,
-        name: true,
+      include: {
         _count: {
           select: {
             employees: true,
@@ -631,10 +609,9 @@ export class DashboardService {
 
     const byDepartment = departments.map(d => ({
       name: d.name,
-      count: d._count.employees,
+      count: (d as any)._count.employees,
     }));
 
-    // New hires in last 30 days
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 

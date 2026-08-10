@@ -1,7 +1,6 @@
 import { Prisma, AuditAction } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class AuditLogService {
   async getAllAuditLogs(params: {
@@ -20,7 +19,6 @@ export class AuditLogService {
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: currentUserId },
       select: { role: true, companyId: true },
@@ -29,15 +27,12 @@ export class AuditLogService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build where clause
     const where: Prisma.AuditLogWhereInput = {};
 
-    // Super admin can see all; others see only their company
     if (currentUser.role !== 'SUPER_ADMIN') {
       where.companyId = currentUser.companyId || undefined;
     }
 
-    // Apply filters
     if (userId) {
       where.userId = userId;
     }
@@ -56,19 +51,23 @@ export class AuditLogService {
     if (entity) {
       where.entity = entity;
     }
+
+    // Build date filter properly
+    const dateFilter: any = {};
     if (startDate) {
-      where.createdAt = { gte: new Date(startDate) };
+      dateFilter.gte = new Date(startDate);
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.createdAt = { ...where.createdAt, lte: end };
+      dateFilter.lte = end;
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      where.createdAt = dateFilter;
     }
 
-    // Get total count
     const total = await prisma.auditLog.count({ where });
 
-    // Get audit logs
     const auditLogs = await prisma.auditLog.findMany({
       where,
       skip,
@@ -84,12 +83,7 @@ export class AuditLogService {
             role: true,
           },
         },
-        company: {
-          select: { id: true, name: true },
-        },
-        branch: {
-          select: { id: true, name: true },
-        },
+        // Remove 'company' from include – not in schema
       },
     });
 
@@ -117,12 +111,6 @@ export class AuditLogService {
             role: true,
           },
         },
-        company: {
-          select: { id: true, name: true },
-        },
-        branch: {
-          select: { id: true, name: true },
-        },
       },
     });
 
@@ -130,7 +118,6 @@ export class AuditLogService {
       throw new ApiError(404, 'Audit log not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: currentUserId },
       select: { role: true, companyId: true },
@@ -190,9 +177,6 @@ export class AuditLogService {
             role: true,
           },
         },
-        company: {
-          select: { id: true, name: true },
-        },
       },
     });
 
@@ -232,18 +216,23 @@ export class AuditLogService {
     } else if (currentUser.role !== 'SUPER_ADMIN') {
       where.companyId = currentUser.companyId || undefined;
     }
+
+    // Build date filter properly
+    const dateFilter: any = {};
     if (startDate) {
-      where.createdAt = { gte: new Date(startDate) };
+      dateFilter.gte = new Date(startDate);
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.createdAt = { ...where.createdAt, lte: end };
+      dateFilter.lte = end;
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      where.createdAt = dateFilter;
     }
 
     const logs = await prisma.auditLog.findMany({ where });
 
-    // Aggregate statistics
     const total = logs.length;
     const byAction = logs.reduce((acc, log) => {
       const action = log.action;
@@ -263,13 +252,11 @@ export class AuditLogService {
       return acc;
     }, {} as Record<string, number>);
 
-    // Get top users
     const topUsers = Object.entries(byUser)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([userId, count]) => ({ userId, count }));
 
-    // Get recent activity timeline (by day)
     const timeline = logs.reduce((acc, log) => {
       const date = log.createdAt.toISOString().split('T')[0];
       acc[date] = (acc[date] || 0) + 1;
@@ -299,7 +286,6 @@ export class AuditLogService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Only SUPER_ADMIN can clear audit logs
     if (currentUser.role !== 'SUPER_ADMIN') {
       throw new ApiError(403, 'Only Super Admin can clear audit logs');
     }
@@ -313,14 +299,13 @@ export class AuditLogService {
       },
     });
 
-    // Log this action
     await prisma.auditLog.create({
       data: {
         userId: currentUserId,
         action: 'DELETE',
         entity: 'AuditLog',
         entityId: 'bulk',
-        changes: { action: 'Cleared old audit logs', days, count: deleted.count },
+        changes: JSON.stringify({ action: 'Cleared old audit logs', days, count: deleted.count }),
         companyId: currentUser.companyId || undefined,
       },
     });
