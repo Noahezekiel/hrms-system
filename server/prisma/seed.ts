@@ -83,7 +83,7 @@ async function main() {
 
   console.log('Admin user created:', adminUser.email);
 
-  // Create an employee record for the admin (optional)
+  // Create an employee record for the admin
   const employee = await prisma.employee.upsert({
     where: { employeeId: 'EMP-001' },
     update: {},
@@ -100,17 +100,18 @@ async function main() {
       branchId: branch.id,
       departmentId: department.id,
       positionId: position.id,
+      userId: adminUser.id, // Link to user
     },
   });
 
-  // Link the user to the employee
+  // Link the user to the employee (already done above with userId)
   await prisma.user.update({
     where: { id: adminUser.id },
     data: { employeeId: employee.id },
   });
 
   // Create default shifts
-  const morningShift = await prisma.shift.upsert({
+  await prisma.shift.upsert({
     where: { code: 'MORNING' },
     update: {},
     create: {
@@ -128,7 +129,7 @@ async function main() {
     },
   });
 
-  const eveningShift = await prisma.shift.upsert({
+  await prisma.shift.upsert({
     where: { code: 'EVENING' },
     update: {},
     create: {
@@ -148,9 +149,9 @@ async function main() {
 
   console.log('Default shifts created');
 
-  // Create some default holidays
+  // Create default holidays
   const holidays = [
-    { name: 'New Year\'s Day', date: new Date('2026-01-01') },
+    { name: "New Year's Day", date: new Date('2026-01-01') },
     { name: 'Independence Day', date: new Date('2026-07-04') },
     { name: 'Christmas Day', date: new Date('2026-12-25') },
   ];

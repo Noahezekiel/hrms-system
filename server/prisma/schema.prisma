@@ -112,7 +112,7 @@ model Company {
 model Branch {
   id               String          @id @default(cuid())
   name             String
-  code             String
+  code             String          @unique
   address          String?
   city             String?
   state            String?
@@ -138,7 +138,7 @@ model Branch {
 model Department {
   id               String          @id @default(cuid())
   name             String
-  code             String
+  code             String          @unique
   description      String?
   isActive         Boolean         @default(true)
   companyId        String
@@ -159,7 +159,7 @@ model Department {
 model Position {
   id               String          @id @default(cuid())
   name             String
-  code             String
+  code             String          @unique
   description      String?
   isActive         Boolean         @default(true)
   departmentId     String
@@ -273,7 +273,7 @@ model Session {
 model Shift {
   id               String          @id @default(cuid())
   name             String
-  code             String
+  code             String          @unique
   description      String?
   shiftType        ShiftType
   startTime        String
