@@ -21,7 +21,7 @@ const imageFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilter
   }
 };
 
-// File filter for documents (unused but kept for completeness)
+// File filter for documents (kept for future use, but not used yet)
 // const documentFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
 //   const allowedTypes = [
 //     'application/pdf',
