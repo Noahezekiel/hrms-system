@@ -1,10 +1,8 @@
-import { Prisma, Employee, Gender } from '@prisma/client';
+import { Prisma, Gender } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
 import { generateQRCode } from '../utils/qrcode';
 import { generateBarcode } from '../utils/barcode';
-import logger from '../utils/logger';
-import { IDCardService } from './idCard.service';
 
 export interface EmployeeCreateInput {
   employeeId: string;
@@ -63,15 +61,10 @@ export interface EmployeeUpdateInput {
   departmentId?: string;
   positionId?: string;
   managerId?: string;
+  employeeId?: string;
 }
 
 export class EmployeeService {
-  private idCardService: IDCardService;
-
-  constructor() {
-    this.idCardService = new IDCardService();
-  }
-
   async getAllEmployees(params: {
     page: number;
     limit: number;
@@ -87,40 +80,35 @@ export class EmployeeService {
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, companyId: true, branchId: true, departmentId: true },
+      select: { id: true, role: true, companyId: true, branchId: true, departmentId: true, employeeId: true },
     });
 
     if (!currentUser) {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build where clause
     const where: Prisma.EmployeeWhereInput = {};
 
-    // Super admin can see all; others see only their company
     if (currentUser.role !== 'SUPER_ADMIN') {
       where.companyId = currentUser.companyId || undefined;
       if (currentUser.role === 'DEPARTMENT_MANAGER') {
         where.departmentId = currentUser.departmentId || undefined;
       }
       if (currentUser.role === 'STAFF') {
-        // Staff see only themselves via their employee record
         const employee = await prisma.employee.findFirst({
-          where: { user: { id: userId } },
+          where: { user: { id: currentUser.id } },
           select: { id: true },
         });
         if (employee) {
           where.id = employee.id;
         } else {
-          where.id = 'nonexistent'; // No access
+          where.id = 'nonexistent';
         }
       }
     }
 
-    // Apply filters
     if (companyId) {
       if (currentUser.role !== 'SUPER_ADMIN' && companyId !== currentUser.companyId) {
         throw new ApiError(403, 'Access denied');
@@ -154,10 +142,8 @@ export class EmployeeService {
       where.isActive = isActive;
     }
 
-    // Get total count
     const total = await prisma.employee.count({ where });
 
-    // Get employees
     const employees = await prisma.employee.findMany({
       where,
       skip,
@@ -250,10 +236,9 @@ export class EmployeeService {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, companyId: true, departmentId: true },
+      select: { id: true, role: true, companyId: true, departmentId: true, employeeId: true },
     });
 
     if (!currentUser) {
@@ -269,9 +254,8 @@ export class EmployeeService {
     }
 
     if (currentUser.role === 'STAFF') {
-      // Staff can only see their own record
       const currentEmployee = await prisma.employee.findFirst({
-        where: { user: { id: userId } },
+        where: { user: { id: currentUser.id } },
         select: { id: true },
       });
       if (!currentEmployee || currentEmployee.id !== id) {
@@ -291,7 +275,6 @@ export class EmployeeService {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Use getEmployeeById to handle permissions
     return this.getEmployeeById(employee.id, userId);
   }
 
@@ -326,7 +309,6 @@ export class EmployeeService {
       managerId,
     } = data;
 
-    // Check if company exists
     const company = await prisma.company.findUnique({
       where: { id: companyId },
     });
@@ -334,7 +316,6 @@ export class EmployeeService {
       throw new ApiError(404, 'Company not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -348,87 +329,35 @@ export class EmployeeService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Check if employeeId is unique
-    const existingEmployee = await prisma.employee.findUnique({
-      where: { employeeId },
-    });
-    if (existingEmployee) {
+    // Unique constraints
+    if (await prisma.employee.findUnique({ where: { employeeId } })) {
       throw new ApiError(409, 'Employee ID already exists');
     }
-
-    // Check if email is unique
-    const emailExists = await prisma.employee.findUnique({
-      where: { email },
-    });
-    if (emailExists) {
+    if (await prisma.employee.findUnique({ where: { email } })) {
       throw new ApiError(409, 'Email already exists');
     }
-
-    // If biometricId is provided, check uniqueness
-    if (biometricId) {
-      const biometricExists = await prisma.employee.findUnique({
-        where: { biometricId },
-      });
-      if (biometricExists) {
-        throw new ApiError(409, 'Biometric ID already assigned to another employee');
-      }
+    if (biometricId && await prisma.employee.findUnique({ where: { biometricId } })) {
+      throw new ApiError(409, 'Biometric ID already assigned');
     }
 
-    // Check branch if provided
+    // Validate relations
     if (branchId) {
-      const branch = await prisma.branch.findFirst({
-        where: {
-          id: branchId,
-          companyId,
-        },
-      });
-      if (!branch) {
-        throw new ApiError(404, 'Branch not found in this company');
-      }
+      const branch = await prisma.branch.findFirst({ where: { id: branchId, companyId } });
+      if (!branch) throw new ApiError(404, 'Branch not found in this company');
     }
-
-    // Check department if provided
     if (departmentId) {
-      const department = await prisma.department.findFirst({
-        where: {
-          id: departmentId,
-          companyId,
-        },
-      });
-      if (!department) {
-        throw new ApiError(404, 'Department not found in this company');
-      }
+      const department = await prisma.department.findFirst({ where: { id: departmentId, companyId } });
+      if (!department) throw new ApiError(404, 'Department not found in this company');
     }
-
-    // Check position if provided
     if (positionId) {
-      const position = await prisma.position.findFirst({
-        where: {
-          id: positionId,
-          department: {
-            companyId,
-          },
-        },
-      });
-      if (!position) {
-        throw new ApiError(404, 'Position not found in this company');
-      }
+      const position = await prisma.position.findFirst({ where: { id: positionId, department: { companyId } } });
+      if (!position) throw new ApiError(404, 'Position not found in this company');
     }
-
-    // Check manager if provided
     if (managerId) {
-      const manager = await prisma.employee.findFirst({
-        where: {
-          id: managerId,
-          companyId,
-        },
-      });
-      if (!manager) {
-        throw new ApiError(404, 'Manager not found in this company');
-      }
+      const manager = await prisma.employee.findFirst({ where: { id: managerId, companyId } });
+      if (!manager) throw new ApiError(404, 'Manager not found in this company');
     }
 
-    // Create employee
     const employee = await prisma.employee.create({
       data: {
         employeeId,
@@ -461,35 +390,23 @@ export class EmployeeService {
         createdBy: userId,
       },
       include: {
-        company: {
-          select: { id: true, name: true },
-        },
-        branch: {
-          select: { id: true, name: true },
-        },
-        department: {
-          select: { id: true, name: true },
-        },
-        position: {
-          select: { id: true, name: true },
-        },
-        manager: {
-          select: { id: true, employeeId: true, firstName: true, lastName: true },
-        },
+        company: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
+        department: { select: { id: true, name: true } },
+        position: { select: { id: true, name: true } },
+        manager: { select: { id: true, employeeId: true, firstName: true, lastName: true } },
       },
     });
 
-    // Generate QR code and barcode for the employee
     await this.generateEmployeeQRAndBarcode(employee.id);
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'CREATE',
         entity: 'Employee',
         entityId: employee.id,
-        changes: { data },
+        changes: JSON.stringify({ data }),
       },
     });
 
@@ -499,18 +416,15 @@ export class EmployeeService {
   async updateEmployee(id: string, data: EmployeeUpdateInput, userId: string) {
     const existingEmployee = await prisma.employee.findUnique({
       where: { id },
-      include: {
-        company: true,
-      },
+      include: { company: true },
     });
     if (!existingEmployee) {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, companyId: true, departmentId: true },
+      select: { id: true, role: true, companyId: true, departmentId: true, employeeId: true },
     });
 
     if (!currentUser) {
@@ -520,117 +434,52 @@ export class EmployeeService {
     if (currentUser.role !== 'SUPER_ADMIN' && existingEmployee.companyId !== currentUser.companyId) {
       throw new ApiError(403, 'Access denied');
     }
-
     if (currentUser.role === 'DEPARTMENT_MANAGER' && existingEmployee.departmentId !== currentUser.departmentId && existingEmployee.id !== currentUser.employeeId) {
       throw new ApiError(403, 'Access denied');
     }
-
     if (currentUser.role === 'STAFF' && existingEmployee.id !== currentUser.employeeId) {
       throw new ApiError(403, 'Access denied');
     }
 
-    // If companyId is being updated, check permissions
     if (data.companyId && data.companyId !== existingEmployee.companyId) {
-      if (currentUser.role !== 'SUPER_ADMIN') {
-        throw new ApiError(403, 'Cannot move employee to another company');
-      }
-      const newCompany = await prisma.company.findUnique({
-        where: { id: data.companyId },
-      });
-      if (!newCompany) {
-        throw new ApiError(404, 'Target company not found');
-      }
+      if (currentUser.role !== 'SUPER_ADMIN') throw new ApiError(403, 'Cannot move employee to another company');
+      const newCompany = await prisma.company.findUnique({ where: { id: data.companyId } });
+      if (!newCompany) throw new ApiError(404, 'Target company not found');
     }
 
-    // If email is being updated, check uniqueness
     if (data.email && data.email !== existingEmployee.email) {
-      const emailExists = await prisma.employee.findFirst({
-        where: {
-          email: data.email,
-          id: { not: id },
-        },
-      });
-      if (emailExists) {
-        throw new ApiError(409, 'Email already exists');
-      }
+      const emailExists = await prisma.employee.findFirst({ where: { email: data.email, id: { not: id } } });
+      if (emailExists) throw new ApiError(409, 'Email already exists');
     }
 
-    // If employeeId is being updated, check uniqueness
     if (data.employeeId && data.employeeId !== existingEmployee.employeeId) {
-      const idExists = await prisma.employee.findFirst({
-        where: {
-          employeeId: data.employeeId,
-          id: { not: id },
-        },
-      });
-      if (idExists) {
-        throw new ApiError(409, 'Employee ID already exists');
-      }
+      const idExists = await prisma.employee.findFirst({ where: { employeeId: data.employeeId, id: { not: id } } });
+      if (idExists) throw new ApiError(409, 'Employee ID already exists');
     }
 
-    // If biometricId is being updated, check uniqueness
     if (data.biometricId && data.biometricId !== existingEmployee.biometricId) {
-      const biometricExists = await prisma.employee.findFirst({
-        where: {
-          biometricId: data.biometricId,
-          id: { not: id },
-        },
-      });
-      if (biometricExists) {
-        throw new ApiError(409, 'Biometric ID already assigned to another employee');
-      }
+      const biometricExists = await prisma.employee.findFirst({ where: { biometricId: data.biometricId, id: { not: id } } });
+      if (biometricExists) throw new ApiError(409, 'Biometric ID already assigned');
     }
 
-    // Validate branch, department, position, manager if provided
     const companyId = data.companyId || existingEmployee.companyId;
     if (data.branchId) {
-      const branch = await prisma.branch.findFirst({
-        where: {
-          id: data.branchId,
-          companyId,
-        },
-      });
-      if (!branch) {
-        throw new ApiError(404, 'Branch not found in this company');
-      }
+      const branch = await prisma.branch.findFirst({ where: { id: data.branchId, companyId } });
+      if (!branch) throw new ApiError(404, 'Branch not found in this company');
     }
     if (data.departmentId) {
-      const department = await prisma.department.findFirst({
-        where: {
-          id: data.departmentId,
-          companyId,
-        },
-      });
-      if (!department) {
-        throw new ApiError(404, 'Department not found in this company');
-      }
+      const department = await prisma.department.findFirst({ where: { id: data.departmentId, companyId } });
+      if (!department) throw new ApiError(404, 'Department not found in this company');
     }
     if (data.positionId) {
-      const position = await prisma.position.findFirst({
-        where: {
-          id: data.positionId,
-          department: {
-            companyId,
-          },
-        },
-      });
-      if (!position) {
-        throw new ApiError(404, 'Position not found in this company');
-      }
+      const position = await prisma.position.findFirst({ where: { id: data.positionId, department: { companyId } } });
+      if (!position) throw new ApiError(404, 'Position not found in this company');
     }
     if (data.managerId) {
-      const manager = await prisma.employee.findFirst({
-        where: {
-          id: data.managerId,
-          companyId,
-        },
-      });
-      if (!manager) {
-        throw new ApiError(404, 'Manager not found in this company');
-      }
+      const manager = await prisma.employee.findFirst({ where: { id: data.managerId, companyId } });
+      if (!manager) throw new ApiError(404, 'Manager not found in this company');
     }
 
-    // Update employee
     const updatedEmployee = await prisma.employee.update({
       where: { id },
       data: {
@@ -663,34 +512,21 @@ export class EmployeeService {
         updatedBy: userId,
       },
       include: {
-        company: {
-          select: { id: true, name: true },
-        },
-        branch: {
-          select: { id: true, name: true },
-        },
-        department: {
-          select: { id: true, name: true },
-        },
-        position: {
-          select: { id: true, name: true },
-        },
-        manager: {
-          select: { id: true, employeeId: true, firstName: true, lastName: true },
-        },
+        company: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
+        department: { select: { id: true, name: true } },
+        position: { select: { id: true, name: true } },
+        manager: { select: { id: true, employeeId: true, firstName: true, lastName: true } },
       },
     });
 
-    // Regenerate QR/Barcode if employeeId or company changed? Not needed.
-
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Employee',
         entityId: id,
-        changes: { before: existingEmployee, after: data },
+        changes: JSON.stringify({ before: existingEmployee, after: data }),
       },
     });
 
@@ -700,18 +536,13 @@ export class EmployeeService {
   async deleteEmployee(id: string, userId: string) {
     const employee = await prisma.employee.findUnique({
       where: { id },
-      include: {
-        attendance: true,
-        leaveRequests: true,
-        idCard: true,
-      },
+      include: { attendance: true, leaveRequests: true, idCard: true },
     });
 
     if (!employee) {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -725,130 +556,93 @@ export class EmployeeService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Check if employee has attendance or leave records
     if (employee.attendance.length > 0 || employee.leaveRequests.length > 0) {
       throw new ApiError(400, 'Cannot delete employee with existing attendance or leave records. Please archive them first.');
     }
 
-    // Delete ID card if exists
     if (employee.idCard) {
-      await prisma.iDCard.delete({
-        where: { id: employee.idCard.id },
-      });
+      await prisma.iDCard.delete({ where: { id: employee.idCard.id } });
     }
 
-    // Delete employee
-    await prisma.employee.delete({
-      where: { id },
-    });
+    await prisma.employee.delete({ where: { id } });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'DELETE',
         entity: 'Employee',
         entityId: id,
-        changes: { deletedEmployee: employee },
+        changes: JSON.stringify({ deletedEmployee: employee }),
       },
     });
   }
 
   async updateEmployeeStatus(id: string, isActive: boolean, userId: string) {
-    const employee = await prisma.employee.findUnique({
-      where: { id },
-    });
-    if (!employee) {
-      throw new ApiError(404, 'Employee not found');
-    }
+    const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee) throw new ApiError(404, 'Employee not found');
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
     });
 
-    if (!currentUser) {
-      throw new ApiError(404, 'Current user not found');
-    }
-
+    if (!currentUser) throw new ApiError(404, 'Current user not found');
     if (currentUser.role !== 'SUPER_ADMIN' && employee.companyId !== currentUser.companyId) {
       throw new ApiError(403, 'Access denied');
     }
 
-    const updatedEmployee = await prisma.employee.update({
-      where: { id },
-      data: { isActive },
-    });
+    const updated = await prisma.employee.update({ where: { id }, data: { isActive } });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Employee',
         entityId: id,
-        changes: { isActive },
+        changes: JSON.stringify({ isActive }),
       },
     });
 
-    return updatedEmployee;
+    return updated;
   }
 
   async uploadAvatar(id: string, avatar: string, userId: string) {
-    const employee = await prisma.employee.findUnique({
-      where: { id },
-    });
-    if (!employee) {
-      throw new ApiError(404, 'Employee not found');
-    }
+    const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee) throw new ApiError(404, 'Employee not found');
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
     });
 
-    if (!currentUser) {
-      throw new ApiError(404, 'Current user not found');
-    }
-
+    if (!currentUser) throw new ApiError(404, 'Current user not found');
     if (currentUser.role !== 'SUPER_ADMIN' && employee.companyId !== currentUser.companyId) {
       throw new ApiError(403, 'Access denied');
     }
 
-    const updatedEmployee = await prisma.employee.update({
-      where: { id },
-      data: { avatar },
-    });
+    const updated = await prisma.employee.update({ where: { id }, data: { avatar } });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Employee',
         entityId: id,
-        changes: { avatar },
+        changes: JSON.stringify({ avatar }),
       },
     });
 
-    return updatedEmployee;
+    return updated;
   }
 
   async generateEmployeeQRAndBarcode(employeeId: string) {
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
-      include: {
-        company: true,
-      },
+      include: { company: true },
     });
 
-    if (!employee) {
-      throw new ApiError(404, 'Employee not found');
-    }
+    if (!employee) throw new ApiError(404, 'Employee not found');
 
-    // Generate QR code data
     const qrData = JSON.stringify({
       employeeId: employee.employeeId,
       name: `${employee.firstName} ${employee.lastName}`,
@@ -859,34 +653,16 @@ export class EmployeeService {
     const qrCode = await generateQRCode(qrData);
     const barcode = await generateBarcode(employee.employeeId);
 
-    // Store in IDCard table
     const cardNumber = `CARD-${employee.employeeId}`;
     const idCard = await prisma.iDCard.upsert({
       where: { employeeId: employee.id },
-      update: {
-        qrCode,
-        barcode,
-        cardNumber,
-        isActive: true,
-        issueDate: new Date(),
-      },
-      create: {
-        employeeId: employee.id,
-        cardNumber,
-        qrCode,
-        barcode,
-        isActive: true,
-        issueDate: new Date(),
-      },
+      update: { qrCode, barcode, cardNumber, isActive: true, issueDate: new Date() },
+      create: { employeeId: employee.id, cardNumber, qrCode, barcode, isActive: true, issueDate: new Date() },
     });
 
-    // Update employee with QR and barcode references if needed
     await prisma.employee.update({
       where: { id: employee.id },
-      data: {
-        qrCode,
-        barcode: barcode,
-      },
+      data: { qrCode, barcode },
     });
 
     return idCard;
@@ -899,39 +675,24 @@ export class EmployeeService {
     limit: number;
     userId: string;
   }) {
-    const employee = await prisma.employee.findUnique({
-      where: { id },
-    });
-    if (!employee) {
-      throw new ApiError(404, 'Employee not found');
-    }
+    const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee) throw new ApiError(404, 'Employee not found');
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: params.userId },
-      select: { role: true, companyId: true, departmentId: true },
+      select: { id: true, role: true, companyId: true, departmentId: true, employeeId: true },
     });
 
-    if (!currentUser) {
-      throw new ApiError(404, 'Current user not found');
-    }
-
+    if (!currentUser) throw new ApiError(404, 'Current user not found');
     if (currentUser.role !== 'SUPER_ADMIN' && employee.companyId !== currentUser.companyId) {
       throw new ApiError(403, 'Access denied');
     }
-
     if (currentUser.role === 'DEPARTMENT_MANAGER' && employee.departmentId !== currentUser.departmentId && employee.id !== currentUser.employeeId) {
       throw new ApiError(403, 'Access denied');
     }
-
     if (currentUser.role === 'STAFF') {
-      const currentEmployee = await prisma.employee.findFirst({
-        where: { user: { id: params.userId } },
-        select: { id: true },
-      });
-      if (!currentEmployee || currentEmployee.id !== id) {
-        throw new ApiError(403, 'Access denied');
-      }
+      const currentEmployee = await prisma.employee.findFirst({ where: { user: { id: currentUser.id } } });
+      if (!currentEmployee || currentEmployee.id !== id) throw new ApiError(403, 'Access denied');
     }
 
     const { startDate, endDate, page, limit } = params;
@@ -940,13 +701,18 @@ export class EmployeeService {
 
     const where: Prisma.AttendanceWhereInput = { employeeId: id };
 
+    // Build date filter properly as an object
+    const dateFilter: any = {};
     if (startDate) {
-      where.date = { gte: new Date(startDate) };
+      dateFilter.gte = new Date(startDate);
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.date = { ...where.date, lte: end };
+      dateFilter.lte = end;
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      where.date = dateFilter;
     }
 
     const total = await prisma.attendance.count({ where });
@@ -958,23 +724,15 @@ export class EmployeeService {
       orderBy: { date: 'desc' },
       include: {
         shift: true,
-        branch: {
-          select: { id: true, name: true },
-        },
+        branch: { select: { id: true, name: true } },
       },
     });
 
-    // Calculate summary
     const summary = await this.calculateAttendanceSummary(id, startDate, endDate);
 
     return {
       attendance,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
       summary,
     };
   }
@@ -982,18 +740,21 @@ export class EmployeeService {
   private async calculateAttendanceSummary(employeeId: string, startDate?: string, endDate?: string) {
     const where: Prisma.AttendanceWhereInput = { employeeId };
 
+    // Build date filter properly as an object
+    const dateFilter: any = {};
     if (startDate) {
-      where.date = { gte: new Date(startDate) };
+      dateFilter.gte = new Date(startDate);
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      where.date = { ...where.date, lte: end };
+      dateFilter.lte = end;
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      where.date = dateFilter;
     }
 
-    const attendances = await prisma.attendance.findMany({
-      where,
-    });
+    const attendances = await prisma.attendance.findMany({ where });
 
     const totalDays = attendances.length;
     const present = attendances.filter(a => a.status === 'PRESENT').length;
@@ -1028,39 +789,24 @@ export class EmployeeService {
     status?: string;
     userId: string;
   }) {
-    const employee = await prisma.employee.findUnique({
-      where: { id },
-    });
-    if (!employee) {
-      throw new ApiError(404, 'Employee not found');
-    }
+    const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee) throw new ApiError(404, 'Employee not found');
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: params.userId },
-      select: { role: true, companyId: true, departmentId: true },
+      select: { id: true, role: true, companyId: true, departmentId: true, employeeId: true },
     });
 
-    if (!currentUser) {
-      throw new ApiError(404, 'Current user not found');
-    }
-
+    if (!currentUser) throw new ApiError(404, 'Current user not found');
     if (currentUser.role !== 'SUPER_ADMIN' && employee.companyId !== currentUser.companyId) {
       throw new ApiError(403, 'Access denied');
     }
-
     if (currentUser.role === 'DEPARTMENT_MANAGER' && employee.departmentId !== currentUser.departmentId && employee.id !== currentUser.employeeId) {
       throw new ApiError(403, 'Access denied');
     }
-
     if (currentUser.role === 'STAFF') {
-      const currentEmployee = await prisma.employee.findFirst({
-        where: { user: { id: params.userId } },
-        select: { id: true },
-      });
-      if (!currentEmployee || currentEmployee.id !== id) {
-        throw new ApiError(403, 'Access denied');
-      }
+      const currentEmployee = await prisma.employee.findFirst({ where: { user: { id: currentUser.id } } });
+      if (!currentEmployee || currentEmployee.id !== id) throw new ApiError(403, 'Access denied');
     }
 
     const { page, limit, status } = params;
@@ -1068,7 +814,6 @@ export class EmployeeService {
     const take = limit;
 
     const where: Prisma.LeaveRequestWhereInput = { employeeId: id };
-
     if (status) {
       where.status = status as any;
     }
@@ -1081,69 +826,42 @@ export class EmployeeService {
       take,
       orderBy: { createdAt: 'desc' },
       include: {
-        employee: {
-          select: { id: true, employeeId: true, firstName: true, lastName: true },
-        },
-        company: {
-          select: { id: true, name: true },
-        },
-        branch: {
-          select: { id: true, name: true },
-        },
-        department: {
-          select: { id: true, name: true },
-        },
+        employee: { select: { id: true, employeeId: true, firstName: true, lastName: true } },
+        company: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
+        department: { select: { id: true, name: true } },
       },
     });
 
     return {
       leaveRequests,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
 
   async generateIDCard(id: string, userId: string) {
     const employee = await prisma.employee.findUnique({
       where: { id },
-      include: {
-        company: true,
-        department: true,
-        position: true,
-      },
+      include: { company: true, department: true, position: true },
     });
 
-    if (!employee) {
-      throw new ApiError(404, 'Employee not found');
-    }
+    if (!employee) throw new ApiError(404, 'Employee not found');
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
     });
 
-    if (!currentUser) {
-      throw new ApiError(404, 'Current user not found');
-    }
-
+    if (!currentUser) throw new ApiError(404, 'Current user not found');
     if (currentUser.role !== 'SUPER_ADMIN' && employee.companyId !== currentUser.companyId) {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Generate QR and Barcode if not exists
-    let idCard = await prisma.iDCard.findUnique({
-      where: { employeeId: id },
-    });
+    let idCard = await prisma.iDCard.findUnique({ where: { employeeId: id } });
 
     if (!idCard) {
       idCard = await this.generateEmployeeQRAndBarcode(id);
     } else {
-      // Regenerate if needed
       const qrData = JSON.stringify({
         employeeId: employee.employeeId,
         name: `${employee.firstName} ${employee.lastName}`,
@@ -1154,12 +872,7 @@ export class EmployeeService {
       const barcode = await generateBarcode(employee.employeeId);
       idCard = await prisma.iDCard.update({
         where: { employeeId: id },
-        data: {
-          qrCode,
-          barcode,
-          issueDate: new Date(),
-          isActive: true,
-        },
+        data: { qrCode, barcode, issueDate: new Date(), isActive: true },
       });
     }
 
@@ -1167,23 +880,15 @@ export class EmployeeService {
   }
 
   async getEmployeeIDCard(id: string, userId: string) {
-    const employee = await prisma.employee.findUnique({
-      where: { id },
-    });
-    if (!employee) {
-      throw new ApiError(404, 'Employee not found');
-    }
+    const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee) throw new ApiError(404, 'Employee not found');
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
     });
 
-    if (!currentUser) {
-      throw new ApiError(404, 'Current user not found');
-    }
-
+    if (!currentUser) throw new ApiError(404, 'Current user not found');
     if (currentUser.role !== 'SUPER_ADMIN' && employee.companyId !== currentUser.companyId) {
       throw new ApiError(403, 'Access denied');
     }
@@ -1200,15 +905,9 @@ export class EmployeeService {
             email: true,
             phone: true,
             avatar: true,
-            company: {
-              select: { id: true, name: true, logo: true },
-            },
-            department: {
-              select: { id: true, name: true },
-            },
-            position: {
-              select: { id: true, name: true },
-            },
+            company: { select: { id: true, name: true, logo: true } },
+            department: { select: { id: true, name: true } },
+            position: { select: { id: true, name: true } },
           },
         },
       },
