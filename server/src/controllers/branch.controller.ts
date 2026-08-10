@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { BranchService } from '../services/branch.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class BranchController {
   private branchService: BranchService;
