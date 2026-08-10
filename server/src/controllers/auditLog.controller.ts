@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuditLogService } from '../services/auditLog.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class AuditLogController {
   private auditLogService: AuditLogService;

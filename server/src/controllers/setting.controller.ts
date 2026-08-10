@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { SettingService } from '../services/setting.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class SettingController {
   private settingService: SettingService;

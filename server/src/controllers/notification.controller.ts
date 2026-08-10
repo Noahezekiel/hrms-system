@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { NotificationService } from '../services/notification.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class NotificationController {
   private notificationService: NotificationService;

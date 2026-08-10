@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { DashboardService } from '../services/dashboard.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class DashboardController {
   private dashboardService: DashboardService;

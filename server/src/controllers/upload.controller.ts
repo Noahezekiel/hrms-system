@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { UploadService } from '../services/upload.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class UploadController {
   private uploadService: UploadService;
