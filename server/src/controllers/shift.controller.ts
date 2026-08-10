@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { ShiftService } from '../services/shift.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class ShiftController {
   private shiftService: ShiftService;

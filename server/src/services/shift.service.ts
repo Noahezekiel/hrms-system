@@ -1,7 +1,6 @@
-import { Prisma, Shift, ShiftType } from '@prisma/client';
+import { Prisma, ShiftType } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export interface ShiftCreateInput {
   name: string;
@@ -45,7 +44,6 @@ export class ShiftService {
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true, branchId: true },
@@ -55,15 +53,12 @@ export class ShiftService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build where clause
     const where: Prisma.ShiftWhereInput = {};
 
-    // Super admin can see all; others see only their company
     if (currentUser.role !== 'SUPER_ADMIN') {
       where.companyId = currentUser.companyId || undefined;
     }
 
-    // Apply filters
     if (companyId) {
       if (currentUser.role !== 'SUPER_ADMIN' && companyId !== currentUser.companyId) {
         throw new ApiError(403, 'Access denied');
@@ -86,10 +81,8 @@ export class ShiftService {
       where.isActive = isActive;
     }
 
-    // Get total count
     const total = await prisma.shift.count({ where });
 
-    // Get shifts
     const shifts = await prisma.shift.findMany({
       where,
       skip,
@@ -159,7 +152,6 @@ export class ShiftService {
       throw new ApiError(404, 'Shift not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -191,7 +183,6 @@ export class ShiftService {
       branchId,
     } = data;
 
-    // Check if company exists
     const company = await prisma.company.findUnique({
       where: { id: companyId },
     });
@@ -199,7 +190,6 @@ export class ShiftService {
       throw new ApiError(404, 'Company not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -213,7 +203,6 @@ export class ShiftService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // If branchId is provided, check if it exists and belongs to the company
     if (branchId) {
       const branch = await prisma.branch.findFirst({
         where: {
@@ -226,7 +215,6 @@ export class ShiftService {
       }
     }
 
-    // Check if code is unique within the company
     const existingShift = await prisma.shift.findFirst({
       where: {
         code,
@@ -237,7 +225,6 @@ export class ShiftService {
       throw new ApiError(409, 'Shift with this code already exists in this company');
     }
 
-    // Validate time format (HH:mm)
     const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
     if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
       throw new ApiError(400, 'Invalid time format. Use HH:mm (e.g., 09:00)');
@@ -249,7 +236,6 @@ export class ShiftService {
       throw new ApiError(400, 'Invalid break end time format. Use HH:mm');
     }
 
-    // Create shift
     const shift = await prisma.shift.create({
       data: {
         name,
@@ -274,14 +260,13 @@ export class ShiftService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'CREATE',
         entity: 'Shift',
         entityId: shift.id,
-        changes: { data },
+        changes: JSON.stringify({ data }),
       },
     });
 
@@ -296,7 +281,6 @@ export class ShiftService {
       throw new ApiError(404, 'Shift not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -310,7 +294,6 @@ export class ShiftService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // If companyId is being updated, check permissions
     if (data.companyId && data.companyId !== existingShift.companyId) {
       if (currentUser.role !== 'SUPER_ADMIN') {
         throw new ApiError(403, 'Cannot move shift to another company');
@@ -323,7 +306,6 @@ export class ShiftService {
       }
     }
 
-    // If branchId is being updated, check if it exists and belongs to the company
     if (data.branchId !== undefined && data.branchId !== existingShift.branchId) {
       const companyId = data.companyId || existingShift.companyId;
       if (data.branchId) {
@@ -339,7 +321,6 @@ export class ShiftService {
       }
     }
 
-    // If code is being updated, check uniqueness within company
     if (data.code && data.code !== existingShift.code) {
       const companyId = data.companyId || existingShift.companyId;
       const codeExists = await prisma.shift.findFirst({
@@ -354,7 +335,6 @@ export class ShiftService {
       }
     }
 
-    // Validate time format if provided
     const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
     if (data.startTime && !timeRegex.test(data.startTime)) {
       throw new ApiError(400, 'Invalid start time format. Use HH:mm');
@@ -369,7 +349,6 @@ export class ShiftService {
       throw new ApiError(400, 'Invalid break end time format. Use HH:mm');
     }
 
-    // Update shift
     const updatedShift = await prisma.shift.update({
       where: { id },
       data: {
@@ -395,14 +374,13 @@ export class ShiftService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Shift',
         entityId: id,
-        changes: { before: existingShift, after: data },
+        changes: JSON.stringify({ before: existingShift, after: data }),
       },
     });
 
@@ -422,7 +400,6 @@ export class ShiftService {
       throw new ApiError(404, 'Shift not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -436,24 +413,21 @@ export class ShiftService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Check if shift has employee assignments or attendance records
     if (shift.employeeShifts.length > 0 || shift.attendances.length > 0) {
       throw new ApiError(400, 'Cannot delete shift with existing employee assignments or attendance records. Please remove them first.');
     }
 
-    // Delete shift
     await prisma.shift.delete({
       where: { id },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'DELETE',
         entity: 'Shift',
         entityId: id,
-        changes: { deletedShift: shift },
+        changes: JSON.stringify({ deletedShift: shift }),
       },
     });
   }
@@ -466,7 +440,6 @@ export class ShiftService {
       throw new ApiError(404, 'Shift not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -485,14 +458,13 @@ export class ShiftService {
       data: { isActive },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Shift',
         entityId: id,
-        changes: { isActive },
+        changes: JSON.stringify({ isActive }),
       },
     });
 
@@ -520,12 +492,10 @@ export class ShiftService {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check if employee belongs to the same company as the shift
     if (employee.companyId !== shift.companyId) {
       throw new ApiError(400, 'Employee does not belong to the same company as the shift');
     }
 
-    // Check permissions if userId provided
     if (userId) {
       const currentUser = await prisma.user.findUnique({
         where: { id: userId },
@@ -542,7 +512,6 @@ export class ShiftService {
     const start = new Date(startDate);
     const end = endDate ? new Date(endDate) : null;
 
-    // Check if assignment already exists for this employee and shift on the same start date
     const existingAssignment = await prisma.employeeShift.findFirst({
       where: {
         employeeId,
@@ -556,7 +525,6 @@ export class ShiftService {
       throw new ApiError(409, 'Employee already assigned to this shift starting on this date');
     }
 
-    // Create assignment
     const assignment = await prisma.employeeShift.create({
       data: {
         employeeId,
@@ -578,7 +546,6 @@ export class ShiftService {
       },
     });
 
-    // Log audit if userId provided
     if (userId) {
       await prisma.auditLog.create({
         data: {
@@ -586,7 +553,7 @@ export class ShiftService {
           action: 'CREATE',
           entity: 'EmployeeShift',
           entityId: assignment.id,
-          changes: { shiftId, employeeId, startDate, endDate },
+          changes: JSON.stringify({ shiftId, employeeId, startDate, endDate }),
         },
       });
     }
@@ -607,7 +574,6 @@ export class ShiftService {
       throw new ApiError(404, 'Active shift assignment not found for this employee');
     }
 
-    // Check permissions
     const shift = await prisma.shift.findUnique({
       where: { id: shiftId },
     });
@@ -628,27 +594,25 @@ export class ShiftService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Soft delete by setting isActive to false
     const updated = await prisma.employeeShift.update({
       where: { id: assignment.id },
       data: { isActive: false },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'DELETE',
         entity: 'EmployeeShift',
         entityId: assignment.id,
-        changes: { shiftId, employeeId, action: 'removed assignment' },
+        changes: JSON.stringify({ shiftId, employeeId, action: 'removed assignment' }),
       },
     });
 
     return updated;
   }
 
-  async getShiftEmployees(id: string, params: {
+    async getShiftEmployees(id: string, params: {
     page: number;
     limit: number;
     search?: string;
@@ -661,7 +625,6 @@ export class ShiftService {
       throw new ApiError(404, 'Shift not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: params.userId },
       select: { role: true, companyId: true },
@@ -676,20 +639,15 @@ export class ShiftService {
     }
 
     const { page, limit, search } = params;
-    const skip = (page - 1) * limit;
-    const take = limit;
 
     const where: Prisma.EmployeeShiftWhereInput = {
       shiftId: id,
       isActive: true,
     };
 
-    const total = await prisma.employeeShift.count({ where });
-
+    // Fetch all active employee shifts for this shift (without pagination)
     const employeeShifts = await prisma.employeeShift.findMany({
       where,
-      skip,
-      take,
       orderBy: { startDate: 'desc' },
       include: {
         employee: {
@@ -705,7 +663,7 @@ export class ShiftService {
       },
     });
 
-    // Filter employees by search if provided
+    // Map to employees and filter by search
     let employees = employeeShifts.map(es => es.employee);
     if (search) {
       const searchLower = search.toLowerCase();
@@ -717,17 +675,19 @@ export class ShiftService {
       );
     }
 
-    const paginatedEmployees = employees.slice(0, take);
-    const pagination = {
-      page,
-      limit,
-      total: employees.length,
-      totalPages: Math.ceil(employees.length / limit),
-    };
+    // Paginate manually
+    const total = employees.length;
+    const start = (page - 1) * limit;
+    const paginatedEmployees = employees.slice(start, start + limit);
 
     return {
       employees: paginatedEmployees,
-      pagination,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 
@@ -739,10 +699,9 @@ export class ShiftService {
       throw new ApiError(404, 'Employee not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, companyId: true, departmentId: true },
+      select: { role: true, companyId: true, departmentId: true, employeeId: true },
     });
 
     if (!currentUser) {
