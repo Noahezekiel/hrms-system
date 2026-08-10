@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserService } from '../services/user.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class UserController {
   private userService: UserService;

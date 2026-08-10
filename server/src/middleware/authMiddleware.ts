@@ -4,6 +4,7 @@ import { prisma } from '../config/database';
 import logger from '../utils/logger';
 import { ApiError } from '../utils/ApiError';
 
+// Extend Express Request type globally
 declare global {
   namespace Express {
     interface Request {
@@ -16,7 +17,7 @@ declare global {
   }
 }
 
-export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+export const authMiddleware = async (req: Request, _res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -62,7 +63,6 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
       role: user.role,
       companyId: user.companyId || undefined,
       branchId: user.branchId || undefined,
-      ...decoded,
     };
     req.userId = user.id;
     req.userRole = user.role;
@@ -81,7 +81,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
 export const requireRole = (roles: string | string[]) => {
   const allowedRoles = Array.isArray(roles) ? roles : [roles];
-  return (req: Request, res: Response, next: NextFunction) => {
+  return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) {
       return next(new ApiError(401, 'Authentication required'));
     }
