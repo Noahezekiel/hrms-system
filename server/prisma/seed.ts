@@ -83,7 +83,7 @@ async function main() {
 
   console.log('Admin user created:', adminUser.email);
 
-  // Create an employee record for the admin
+  // Create an employee record for the admin – linking via `user` relation
   const employee = await prisma.employee.upsert({
     where: { employeeId: 'EMP-001' },
     update: {},
@@ -100,11 +100,11 @@ async function main() {
       branchId: branch.id,
       departmentId: department.id,
       positionId: position.id,
-      userId: adminUser.id, // Link to user
+      user: { connect: { id: adminUser.id } }, // Connect to user
     },
   });
 
-  // Link the user to the employee (already done above with userId)
+  // Also update the user to point to this employee (bidirectional link)
   await prisma.user.update({
     where: { id: adminUser.id },
     data: { employeeId: employee.id },

@@ -3,13 +3,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { json, urlencoded } from 'express';
-import rateLimit from 'express-rate-limit';
-
 import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
-import { authMiddleware } from './middleware/authMiddleware';
 import { apiLimiter } from './middleware/rateLimiter';
-
 import routes from './routes';
 import logger from './utils/logger';
 
@@ -50,7 +46,7 @@ app.use('/api', apiLimiter);
 app.use('/api/v1', routes);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.status(200).json({
     status: 'OK',
     timestamp: new Date().toISOString(),
@@ -59,7 +55,7 @@ app.get('/health', (req, res) => {
 });
 
 // Root endpoint
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.status(200).json({
     message: 'HRMS API Server',
     version: '1.0.0',

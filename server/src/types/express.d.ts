@@ -15,17 +15,6 @@ declare global {
         branchId?: string;
       };
     }
-
-    interface Multer {
-      File: Express.Multer.File & {
-        location?: string;
-        key?: string;
-        bucket?: string;
-        etag?: string;
-        serverSideEncryption?: string;
-        versionId?: string;
-      };
-    }
   }
 }
 

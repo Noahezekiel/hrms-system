@@ -8,7 +8,7 @@ export const errorHandler = (
   err: Error | ApiError | ZodError | Prisma.PrismaClientKnownRequestError,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction // renamed to _next to avoid unused warning
 ) => {
   // Log error
   logger.error('Error:', {
@@ -17,7 +17,7 @@ export const errorHandler = (
     path: req.path,
     method: req.method,
     ip: req.ip,
-    userId: req.userId,
+    userId: (req as any).userId, // cast to any to bypass type check
   });
 
   // Handle known API errors
@@ -48,27 +48,17 @@ export const errorHandler = (
     let statusCode = 400;
     let message = 'Database error';
 
-    // Handle unique constraint violation
     if (err.code === 'P2002') {
       statusCode = 409;
       const target = err.meta?.target as string[] | undefined;
       message = `Duplicate entry for field: ${target?.join(', ') || 'unknown'}`;
-    }
-
-    // Handle record not found
-    if (err.code === 'P2025') {
+    } else if (err.code === 'P2025') {
       statusCode = 404;
       message = 'Record not found';
-    }
-
-    // Handle foreign key constraint
-    if (err.code === 'P2003') {
+    } else if (err.code === 'P2003') {
       statusCode = 400;
       message = 'Related record does not exist';
-    }
-
-    // Handle invalid data
-    if (err.code === 'P2006') {
+    } else if (err.code === 'P2006') {
       statusCode = 400;
       message = 'Invalid data provided';
     }

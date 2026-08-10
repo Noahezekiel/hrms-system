@@ -9,7 +9,6 @@ import { prisma } from './config/database';
 import logger from './utils/logger';
 
 const PORT = process.env.PORT || 5000;
-const SOCKET_PORT = process.env.SOCKET_PORT || 5000;
 
 const httpServer = createServer(app);
 
@@ -27,7 +26,7 @@ const io = new SocketServer(httpServer, {
 setupSocketHandlers(io);
 
 // Store io instance globally for use in controllers/services
-global.__io = io;
+(global as any).__io = io;
 
 // Start server
 httpServer.listen(PORT, () => {

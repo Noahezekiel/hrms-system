@@ -17,9 +17,9 @@ export const apiLimiter = rateLimit({
   },
   keyGenerator: (req: Request) => {
     // Use user ID if authenticated, otherwise IP
-    return req.userId || req.ip || 'unknown';
+    return (req as any).userId || req.ip || 'unknown';
   },
-  handler: (req: Request, res: Response) => {
+  handler: (_req: Request, res: Response) => {
     res.status(429).json({
       success: false,
       message: 'Too many requests, please try again later.',
