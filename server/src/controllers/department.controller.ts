@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { DepartmentService } from '../services/department.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class DepartmentController {
   private departmentService: DepartmentService;

@@ -1,7 +1,6 @@
-import { Prisma, Department } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export interface DepartmentCreateInput {
   name: string;
@@ -37,29 +36,24 @@ export class DepartmentService {
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, companyId: true, branchId: true },
+      select: { role: true, companyId: true, branchId: true, departmentId: true },
     });
 
     if (!currentUser) {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build where clause
     const where: Prisma.DepartmentWhereInput = {};
 
-    // Super admin can see all; others see only their company
     if (currentUser.role !== 'SUPER_ADMIN') {
       where.companyId = currentUser.companyId || undefined;
-      // Department managers see only their department
       if (currentUser.role === 'DEPARTMENT_MANAGER') {
         where.id = currentUser.departmentId || undefined;
       }
     }
 
-    // Apply filters
     if (companyId) {
       if (currentUser.role !== 'SUPER_ADMIN' && companyId !== currentUser.companyId) {
         throw new ApiError(403, 'Access denied');
@@ -82,10 +76,8 @@ export class DepartmentService {
       where.isActive = isActive;
     }
 
-    // Get total count
     const total = await prisma.department.count({ where });
 
-    // Get departments
     const departments = await prisma.department.findMany({
       where,
       skip,
@@ -156,7 +148,6 @@ export class DepartmentService {
       throw new ApiError(404, 'Department not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -176,7 +167,6 @@ export class DepartmentService {
   async createDepartment(data: DepartmentCreateInput, userId: string) {
     const { name, code, description, isActive, companyId, branchId, managerId } = data;
 
-    // Check if company exists
     const company = await prisma.company.findUnique({
       where: { id: companyId },
     });
@@ -184,7 +174,6 @@ export class DepartmentService {
       throw new ApiError(404, 'Company not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -198,7 +187,6 @@ export class DepartmentService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // If branchId is provided, check if it exists and belongs to the company
     if (branchId) {
       const branch = await prisma.branch.findFirst({
         where: {
@@ -211,7 +199,6 @@ export class DepartmentService {
       }
     }
 
-    // If managerId is provided, check if the employee exists and belongs to the company
     if (managerId) {
       const manager = await prisma.employee.findFirst({
         where: {
@@ -224,7 +211,6 @@ export class DepartmentService {
       }
     }
 
-    // Check if code is unique within the company
     const existingDepartment = await prisma.department.findFirst({
       where: {
         code,
@@ -235,7 +221,6 @@ export class DepartmentService {
       throw new ApiError(409, 'Department with this code already exists in this company');
     }
 
-    // Create department
     const department = await prisma.department.create({
       data: {
         name,
@@ -259,14 +244,13 @@ export class DepartmentService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'CREATE',
         entity: 'Department',
         entityId: department.id,
-        changes: { data },
+        changes: JSON.stringify({ data }),
       },
     });
 
@@ -281,7 +265,6 @@ export class DepartmentService {
       throw new ApiError(404, 'Department not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -295,7 +278,6 @@ export class DepartmentService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // If companyId is being updated, check permissions
     if (data.companyId && data.companyId !== existingDepartment.companyId) {
       if (currentUser.role !== 'SUPER_ADMIN') {
         throw new ApiError(403, 'Cannot move department to another company');
@@ -308,7 +290,6 @@ export class DepartmentService {
       }
     }
 
-    // If branchId is being updated, check if it exists and belongs to the company
     if (data.branchId !== undefined && data.branchId !== existingDepartment.branchId) {
       const companyId = data.companyId || existingDepartment.companyId;
       if (data.branchId) {
@@ -324,7 +305,6 @@ export class DepartmentService {
       }
     }
 
-    // If managerId is being updated, check if the employee exists and belongs to the company
     if (data.managerId !== undefined && data.managerId !== existingDepartment.managerId) {
       if (data.managerId) {
         const companyId = data.companyId || existingDepartment.companyId;
@@ -340,7 +320,6 @@ export class DepartmentService {
       }
     }
 
-    // If code is being updated, check uniqueness within company
     if (data.code && data.code !== existingDepartment.code) {
       const companyId = data.companyId || existingDepartment.companyId;
       const codeExists = await prisma.department.findFirst({
@@ -355,7 +334,6 @@ export class DepartmentService {
       }
     }
 
-    // Update department
     const updatedDepartment = await prisma.department.update({
       where: { id },
       data: {
@@ -380,14 +358,13 @@ export class DepartmentService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Department',
         entityId: id,
-        changes: { before: existingDepartment, after: data },
+        changes: JSON.stringify({ before: existingDepartment, after: data }),
       },
     });
 
@@ -407,7 +384,6 @@ export class DepartmentService {
       throw new ApiError(404, 'Department not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -421,24 +397,21 @@ export class DepartmentService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Check if department has employees or positions
     if (department.employees.length > 0 || department.positions.length > 0) {
       throw new ApiError(400, 'Cannot delete department with existing employees or positions. Please reassign or remove them first.');
     }
 
-    // Delete department
     await prisma.department.delete({
       where: { id },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'DELETE',
         entity: 'Department',
         entityId: id,
-        changes: { deletedDepartment: department },
+        changes: JSON.stringify({ deletedDepartment: department }),
       },
     });
   }
@@ -451,7 +424,6 @@ export class DepartmentService {
       throw new ApiError(404, 'Department not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -470,14 +442,13 @@ export class DepartmentService {
       data: { isActive },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Department',
         entityId: id,
-        changes: { isActive },
+        changes: JSON.stringify({ isActive }),
       },
     });
 
@@ -497,7 +468,6 @@ export class DepartmentService {
       throw new ApiError(404, 'Department not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: params.userId },
       select: { role: true, companyId: true },
@@ -565,7 +535,6 @@ export class DepartmentService {
       throw new ApiError(404, 'Department not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
