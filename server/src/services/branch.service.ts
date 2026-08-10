@@ -1,7 +1,6 @@
-import { Prisma, Branch } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export interface BranchCreateInput {
   name: string;
@@ -44,7 +43,6 @@ export class BranchService {
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -54,15 +52,12 @@ export class BranchService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build where clause
     const where: Prisma.BranchWhereInput = {};
 
-    // Super admin can see all branches; others see only their company's branches
     if (currentUser.role !== 'SUPER_ADMIN') {
       where.companyId = currentUser.companyId || undefined;
     }
 
-    // Apply filters
     if (companyId) {
       if (currentUser.role !== 'SUPER_ADMIN' && companyId !== currentUser.companyId) {
         throw new ApiError(403, 'Access denied');
@@ -83,10 +78,8 @@ export class BranchService {
       where.isActive = isActive;
     }
 
-    // Get total count
     const total = await prisma.branch.count({ where });
 
-    // Get branches
     const branches = await prisma.branch.findMany({
       where,
       skip,
@@ -142,7 +135,6 @@ export class BranchService {
       throw new ApiError(404, 'Branch not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -162,7 +154,6 @@ export class BranchService {
   async createBranch(data: BranchCreateInput, userId: string) {
     const { name, code, address, city, state, country, zipCode, phone, email, isActive, companyId } = data;
 
-    // Check if company exists
     const company = await prisma.company.findUnique({
       where: { id: companyId },
     });
@@ -170,7 +161,6 @@ export class BranchService {
       throw new ApiError(404, 'Company not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -184,7 +174,6 @@ export class BranchService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Check if code is unique within the company
     const existingBranch = await prisma.branch.findFirst({
       where: {
         code,
@@ -195,7 +184,6 @@ export class BranchService {
       throw new ApiError(409, 'Branch with this code already exists in this company');
     }
 
-    // Check if email is unique (if provided)
     if (email) {
       const emailExists = await prisma.branch.findFirst({
         where: {
@@ -208,7 +196,6 @@ export class BranchService {
       }
     }
 
-    // Create branch
     const branch = await prisma.branch.create({
       data: {
         name,
@@ -230,14 +217,13 @@ export class BranchService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'CREATE',
         entity: 'Branch',
         entityId: branch.id,
-        changes: { data },
+        changes: JSON.stringify({ data }),
       },
     });
 
@@ -252,7 +238,6 @@ export class BranchService {
       throw new ApiError(404, 'Branch not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -266,12 +251,10 @@ export class BranchService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // If companyId is being updated, check permissions
     if (data.companyId && data.companyId !== existingBranch.companyId) {
       if (currentUser.role !== 'SUPER_ADMIN') {
         throw new ApiError(403, 'Cannot move branch to another company');
       }
-      // Check if new company exists
       const newCompany = await prisma.company.findUnique({
         where: { id: data.companyId },
       });
@@ -280,7 +263,6 @@ export class BranchService {
       }
     }
 
-    // If code is being updated, check uniqueness within company
     if (data.code && data.code !== existingBranch.code) {
       const companyId = data.companyId || existingBranch.companyId;
       const codeExists = await prisma.branch.findFirst({
@@ -295,7 +277,6 @@ export class BranchService {
       }
     }
 
-    // If email is being updated, check uniqueness
     if (data.email && data.email !== existingBranch.email) {
       const companyId = data.companyId || existingBranch.companyId;
       const emailExists = await prisma.branch.findFirst({
@@ -310,7 +291,6 @@ export class BranchService {
       }
     }
 
-    // Update branch
     const updatedBranch = await prisma.branch.update({
       where: { id },
       data: {
@@ -333,14 +313,13 @@ export class BranchService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Branch',
         entityId: id,
-        changes: { before: existingBranch, after: data },
+        changes: JSON.stringify({ before: existingBranch, after: data }),
       },
     });
 
@@ -361,7 +340,6 @@ export class BranchService {
       throw new ApiError(404, 'Branch not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -375,24 +353,21 @@ export class BranchService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Check if branch has employees or departments
     if (branch.employees.length > 0 || branch.departments.length > 0 || branch.shifts.length > 0) {
       throw new ApiError(400, 'Cannot delete branch with existing employees, departments, or shifts. Please reassign or remove them first.');
     }
 
-    // Delete branch
     await prisma.branch.delete({
       where: { id },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'DELETE',
         entity: 'Branch',
         entityId: id,
-        changes: { deletedBranch: branch },
+        changes: JSON.stringify({ deletedBranch: branch }),
       },
     });
   }
@@ -405,7 +380,6 @@ export class BranchService {
       throw new ApiError(404, 'Branch not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -424,14 +398,13 @@ export class BranchService {
       data: { isActive },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Branch',
         entityId: id,
-        changes: { isActive },
+        changes: JSON.stringify({ isActive }),
       },
     });
 
@@ -446,7 +419,6 @@ export class BranchService {
       throw new ApiError(404, 'Branch not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -492,7 +464,6 @@ export class BranchService {
       throw new ApiError(404, 'Branch not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: params.userId },
       select: { role: true, companyId: true },
