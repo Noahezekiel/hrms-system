@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { PositionService } from '../services/position.service';
-import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export class PositionController {
   private positionService: PositionService;

@@ -1,7 +1,6 @@
-import { Prisma, Position } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export interface PositionCreateInput {
   name: string;
@@ -33,7 +32,6 @@ export class PositionService {
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true, departmentId: true },
@@ -43,22 +41,17 @@ export class PositionService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build where clause
     const where: Prisma.PositionWhereInput = {};
 
-    // Super admin can see all; others see only their company
     if (currentUser.role !== 'SUPER_ADMIN') {
-      // We need to join with department to filter by company
       where.department = {
         companyId: currentUser.companyId || undefined,
       };
-      // Department managers see only their department
       if (currentUser.role === 'DEPARTMENT_MANAGER') {
         where.departmentId = currentUser.departmentId || undefined;
       }
     }
 
-    // Apply filters
     if (companyId) {
       if (currentUser.role !== 'SUPER_ADMIN' && companyId !== currentUser.companyId) {
         throw new ApiError(403, 'Access denied');
@@ -83,10 +76,8 @@ export class PositionService {
       where.isActive = isActive;
     }
 
-    // Get total count
     const total = await prisma.position.count({ where });
 
-    // Get positions
     const positions = await prisma.position.findMany({
       where,
       skip,
@@ -98,6 +89,7 @@ export class PositionService {
             id: true,
             name: true,
             code: true,
+            companyId: true, // Added this
             company: {
               select: { id: true, name: true, code: true },
             },
@@ -131,6 +123,7 @@ export class PositionService {
             id: true,
             name: true,
             code: true,
+            companyId: true, // Added this
             company: {
               select: { id: true, name: true, code: true },
             },
@@ -153,7 +146,6 @@ export class PositionService {
       throw new ApiError(404, 'Position not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -163,6 +155,7 @@ export class PositionService {
       throw new ApiError(404, 'Current user not found');
     }
 
+    // Now we can safely access companyId from department
     if (currentUser.role !== 'SUPER_ADMIN' && position.department.companyId !== currentUser.companyId) {
       throw new ApiError(403, 'Access denied');
     }
@@ -173,7 +166,6 @@ export class PositionService {
   async createPosition(data: PositionCreateInput, userId: string) {
     const { name, code, description, isActive, departmentId } = data;
 
-    // Check if department exists
     const department = await prisma.department.findUnique({
       where: { id: departmentId },
       include: {
@@ -184,7 +176,6 @@ export class PositionService {
       throw new ApiError(404, 'Department not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -198,7 +189,6 @@ export class PositionService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Check if code is unique within the department
     const existingPosition = await prisma.position.findFirst({
       where: {
         code,
@@ -209,7 +199,6 @@ export class PositionService {
       throw new ApiError(409, 'Position with this code already exists in this department');
     }
 
-    // Create position
     const position = await prisma.position.create({
       data: {
         name,
@@ -223,6 +212,7 @@ export class PositionService {
           select: {
             id: true,
             name: true,
+            companyId: true,
             company: {
               select: { id: true, name: true },
             },
@@ -231,14 +221,13 @@ export class PositionService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'CREATE',
         entity: 'Position',
         entityId: position.id,
-        changes: { data },
+        changes: JSON.stringify({ data }),
       },
     });
 
@@ -260,7 +249,6 @@ export class PositionService {
       throw new ApiError(404, 'Position not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -274,7 +262,6 @@ export class PositionService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // If departmentId is being updated, check if new department exists and belongs to the same company
     if (data.departmentId && data.departmentId !== existingPosition.departmentId) {
       const newDepartment = await prisma.department.findUnique({
         where: { id: data.departmentId },
@@ -286,13 +273,11 @@ export class PositionService {
       if (currentUser.role !== 'SUPER_ADMIN' && newDepartment.companyId !== currentUser.companyId) {
         throw new ApiError(403, 'Access denied to target department');
       }
-      // Check if the new department belongs to the same company as the current one
       if (newDepartment.companyId !== existingPosition.department.companyId) {
         throw new ApiError(400, 'Cannot move position to a department in a different company');
       }
     }
 
-    // If code is being updated, check uniqueness within the department
     if (data.code && data.code !== existingPosition.code) {
       const departmentId = data.departmentId || existingPosition.departmentId;
       const codeExists = await prisma.position.findFirst({
@@ -307,7 +292,6 @@ export class PositionService {
       }
     }
 
-    // Update position
     const updatedPosition = await prisma.position.update({
       where: { id },
       data: {
@@ -322,6 +306,7 @@ export class PositionService {
           select: {
             id: true,
             name: true,
+            companyId: true,
             company: {
               select: { id: true, name: true },
             },
@@ -330,14 +315,13 @@ export class PositionService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Position',
         entityId: id,
-        changes: { before: existingPosition, after: data },
+        changes: JSON.stringify({ before: existingPosition, after: data }),
       },
     });
 
@@ -361,7 +345,6 @@ export class PositionService {
       throw new ApiError(404, 'Position not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -375,24 +358,21 @@ export class PositionService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // Check if position has employees
     if (position.employees.length > 0) {
       throw new ApiError(400, 'Cannot delete position with existing employees. Please reassign or remove them first.');
     }
 
-    // Delete position
     await prisma.position.delete({
       where: { id },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'DELETE',
         entity: 'Position',
         entityId: id,
-        changes: { deletedPosition: position },
+        changes: JSON.stringify({ deletedPosition: position }),
       },
     });
   }
@@ -412,7 +392,6 @@ export class PositionService {
       throw new ApiError(404, 'Position not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -431,14 +410,13 @@ export class PositionService {
       data: { isActive },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Position',
         entityId: id,
-        changes: { isActive },
+        changes: JSON.stringify({ isActive }),
       },
     });
 
@@ -465,7 +443,6 @@ export class PositionService {
       throw new ApiError(404, 'Position not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: params.userId },
       select: { role: true, companyId: true },
