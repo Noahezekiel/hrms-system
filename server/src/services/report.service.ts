@@ -40,7 +40,7 @@ export class ReportService {
       where.employee = { departmentId };
     }
 
-    // Build date filter
+    // Build date filter properly
     const dateFilter: any = {};
     if (startDate) {
       dateFilter.gte = new Date(startDate);
@@ -100,7 +100,7 @@ export class ReportService {
     }));
 
     if (format === 'pdf') {
-      return this.generateAttendancePDF(reportData, { companyId, branchId, departmentId, startDate, endDate });
+      return this.generateAttendancePDF(reportData);
     } else if (format === 'excel') {
       return this.generateAttendanceExcel(reportData);
     }
@@ -108,7 +108,7 @@ export class ReportService {
     return reportData;
   }
 
-  private async generateAttendancePDF(data: any[], filters: any): Promise<Buffer> {
+  private async generateAttendancePDF(data: any[]): Promise<Buffer> {
     const pdf = new PDFGenerator({
       title: 'Attendance Report',
       author: 'HRMS',
@@ -118,17 +118,7 @@ export class ReportService {
       margin: 20,
     });
 
-    let title = 'Attendance Report';
-    if (filters.companyId) {
-      const company = await prisma.company.findUnique({ where: { id: filters.companyId } });
-      title += ` - ${company?.name || ''}`;
-    }
-    pdf.addHeader(title, `Generated: ${new Date().toLocaleDateString()}`);
-
-    if (filters.startDate || filters.endDate) {
-      const period = `${filters.startDate || 'Start'} to ${filters.endDate || 'End'}`;
-      pdf.addText(`Period: ${period}`, { fontSize: 12 });
-    }
+    pdf.addHeader('Attendance Report', `Generated: ${new Date().toLocaleDateString()}`);
 
     const columns = [
       { header: 'Employee ID', key: 'Employee ID', width: 80 },
@@ -190,7 +180,7 @@ export class ReportService {
       where.departmentId = departmentId;
     }
 
-    // Build date filter
+    // Build date filter properly
     const dateFilter: any = {};
     if (startDate) {
       dateFilter.gte = new Date(startDate);
@@ -463,7 +453,7 @@ export class ReportService {
       where.employee = { departmentId };
     }
 
-    // Build date filter
+    // Build date filter properly
     const dateFilter: any = {};
     if (startDate) {
       dateFilter.gte = new Date(startDate);

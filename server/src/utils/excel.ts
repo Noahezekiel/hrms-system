@@ -25,12 +25,10 @@ export const generateExcelBuffer = (
     let worksheetData: any[] = [];
 
     if (columns) {
-      // Use specified columns
       const headerRow: string[] = columns.map(col => col.header);
       const dataRows: any[][] = data.map(row => {
         return columns.map(col => {
           const value = row[col.key];
-          // Format date if needed
           if (value instanceof Date) {
             return value;
           }
@@ -39,7 +37,6 @@ export const generateExcelBuffer = (
       });
       worksheetData = [headerRow, ...dataRows];
     } else {
-      // Use all keys from first row
       if (data.length === 0) {
         return Buffer.from('');
       }
@@ -58,7 +55,6 @@ export const generateExcelBuffer = (
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
     
-    // Set column widths
     if (columns) {
       const colWidths = columns.map(col => ({ wch: col.width || 20 }));
       worksheet['!cols'] = colWidths;
@@ -129,7 +125,7 @@ export const parseExcelBufferToRows = (buffer: Buffer, options?: { sheetName?: s
     const sheetName = options?.sheetName || workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-    return rows;
+    return rows as any[][];
   } catch (error) {
     logger.error('Excel parsing to rows failed:', error);
     throw new ApiError(400, 'Failed to parse Excel file');
