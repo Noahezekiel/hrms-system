@@ -1,7 +1,6 @@
-import { Prisma, Company } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
-import logger from '../utils/logger';
 
 export interface CompanyCreateInput {
   name: string;
@@ -45,7 +44,6 @@ export class CompanyService {
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // Get current user to check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -55,10 +53,8 @@ export class CompanyService {
       throw new ApiError(404, 'User not found');
     }
 
-    // Build where clause
     const where: Prisma.CompanyWhereInput = {};
 
-    // Super admin can see all companies; others see only their company
     if (currentUser.role !== 'SUPER_ADMIN') {
       where.id = currentUser.companyId || undefined;
     }
@@ -75,10 +71,8 @@ export class CompanyService {
       where.isActive = isActive;
     }
 
-    // Get total count
     const total = await prisma.company.count({ where });
 
-    // Get companies
     const companies = await prisma.company.findMany({
       where,
       skip,
@@ -135,7 +129,6 @@ export class CompanyService {
       throw new ApiError(404, 'Company not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -155,7 +148,6 @@ export class CompanyService {
   async createCompany(data: CompanyCreateInput, userId: string) {
     const { name, code, description, logo, email, phone, address, city, state, country, zipCode, isActive } = data;
 
-    // Check if code already exists
     const existingCompany = await prisma.company.findUnique({
       where: { code },
     });
@@ -163,9 +155,8 @@ export class CompanyService {
       throw new ApiError(409, 'Company with this code already exists');
     }
 
-    // Check if email already exists (if provided)
     if (email) {
-      const emailExists = await prisma.company.findUnique({
+      const emailExists = await prisma.company.findFirst({
         where: { email },
       });
       if (emailExists) {
@@ -173,7 +164,6 @@ export class CompanyService {
       }
     }
 
-    // Only SUPER_ADMIN can create companies
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true },
@@ -187,7 +177,6 @@ export class CompanyService {
       throw new ApiError(403, 'Only Super Admin can create companies');
     }
 
-    // Create company
     const company = await prisma.company.create({
       data: {
         name,
@@ -205,14 +194,13 @@ export class CompanyService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'CREATE',
         entity: 'Company',
         entityId: company.id,
-        changes: { data },
+        changes: JSON.stringify({ data }),
       },
     });
 
@@ -227,7 +215,6 @@ export class CompanyService {
       throw new ApiError(404, 'Company not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -241,7 +228,6 @@ export class CompanyService {
       throw new ApiError(403, 'Access denied');
     }
 
-    // If code is being updated, check uniqueness
     if (data.code && data.code !== existingCompany.code) {
       const codeExists = await prisma.company.findUnique({
         where: { code: data.code },
@@ -251,9 +237,8 @@ export class CompanyService {
       }
     }
 
-    // If email is being updated, check uniqueness
     if (data.email && data.email !== existingCompany.email) {
-      const emailExists = await prisma.company.findUnique({
+      const emailExists = await prisma.company.findFirst({
         where: { email: data.email },
       });
       if (emailExists) {
@@ -261,7 +246,6 @@ export class CompanyService {
       }
     }
 
-    // Update company
     const updatedCompany = await prisma.company.update({
       where: { id },
       data: {
@@ -280,14 +264,13 @@ export class CompanyService {
       },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Company',
         entityId: id,
-        changes: { before: existingCompany, after: data },
+        changes: JSON.stringify({ before: existingCompany, after: data }),
       },
     });
 
@@ -308,7 +291,6 @@ export class CompanyService {
       throw new ApiError(404, 'Company not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true },
@@ -322,24 +304,21 @@ export class CompanyService {
       throw new ApiError(403, 'Only Super Admin can delete companies');
     }
 
-    // Check if company has any employees, branches, or departments
     if (company.employees.length > 0 || company.branches.length > 0 || company.departments.length > 0) {
       throw new ApiError(400, 'Cannot delete company with existing employees, branches, or departments. Please remove them first.');
     }
 
-    // Delete company
     await prisma.company.delete({
       where: { id },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'DELETE',
         entity: 'Company',
         entityId: id,
-        changes: { deletedCompany: company },
+        changes: JSON.stringify({ deletedCompany: company }),
       },
     });
   }
@@ -352,7 +331,6 @@ export class CompanyService {
       throw new ApiError(404, 'Company not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -371,14 +349,13 @@ export class CompanyService {
       data: { isActive },
     });
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'UPDATE',
         entity: 'Company',
         entityId: id,
-        changes: { isActive },
+        changes: JSON.stringify({ isActive }),
       },
     });
 
@@ -393,7 +370,6 @@ export class CompanyService {
       throw new ApiError(404, 'Company not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -431,7 +407,6 @@ export class CompanyService {
       throw new ApiError(404, 'Company not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -477,7 +452,6 @@ export class CompanyService {
       throw new ApiError(404, 'Company not found');
     }
 
-    // Check permissions
     const currentUser = await prisma.user.findUnique({
       where: { id: params.userId },
       select: { role: true, companyId: true },
