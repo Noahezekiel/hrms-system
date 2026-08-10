@@ -12,7 +12,7 @@ const uploadController = new UploadController();
 const storage = multer.memoryStorage();
 
 // File filter for images
-const imageFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+const imageFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
@@ -21,22 +21,22 @@ const imageFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterC
   }
 };
 
-// File filter for documents
-const documentFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowedTypes = [
-    'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'text/plain',
-  ];
-  if (allowedTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new ApiError(400, 'Invalid file type. Only PDF, DOC, DOCX, XLS, XLSX, and TXT are allowed.'));
-  }
-};
+// File filter for documents (unused but kept for completeness)
+// const documentFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+//   const allowedTypes = [
+//     'application/pdf',
+//     'application/msword',
+//     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+//     'application/vnd.ms-excel',
+//     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+//     'text/plain',
+//   ];
+//   if (allowedTypes.includes(file.mimetype)) {
+//     cb(null, true);
+//   } else {
+//     cb(new ApiError(400, 'Invalid file type. Only PDF, DOC, DOCX, XLS, XLSX, and TXT are allowed.'));
+//   }
+// };
 
 // General upload - any file type
 const upload = multer({
@@ -50,15 +50,6 @@ const upload = multer({
 const uploadImage = multer({
   storage,
   fileFilter: imageFilter,
-  limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880'),
-  },
-});
-
-// Document upload
-const uploadDocument = multer({
-  storage,
-  fileFilter: documentFilter,
   limits: {
     fileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880'),
   },
