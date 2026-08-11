@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
 import { useDashboardStore } from '@/store/dashboard.store';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import DashboardLayout from '@/components/layout/DashboardLayout';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { AttendanceChart } from '@/components/dashboard/AttendanceChart';
 import { DepartmentStats } from '@/components/dashboard/DepartmentStats';

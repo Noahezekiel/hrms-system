@@ -1,155 +1,82 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { ReactNode, useState, useEffect } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
-import { useDashboardStore } from '@/store/dashboard.store';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { StatsCard } from '@/components/dashboard/StatsCard';
-import { AttendanceChart } from '@/components/dashboard/AttendanceChart';
-import { DepartmentStats } from '@/components/dashboard/DepartmentStats';
-import { RecentActivity } from '@/components/dashboard/RecentActivity';
-import { LeaveStats } from '@/components/dashboard/LeaveStats';
-import { QuickActions } from '@/components/dashboard/QuickActions';
-import { Loader2, Users, Clock, Calendar, Briefcase, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useThemeStore } from '@/store/theme.store';
+import { Sidebar } from './Sidebar';
+import { Header } from './Header';
+import { cn } from '@/lib/utils';
 
-export default function DashboardPage() {
+interface DashboardLayoutProps {
+  children: ReactNode;
+}
+
+export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
-  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
-  const {
-    overview,
-    attendanceChart,
-    departmentStats,
-    recentActivity,
-    leaveStats,
-    isLoading,
-    error,
-    fetchDashboardData,
-  } = useDashboardStore();
-
-  const [timeframe, setTimeframe] = useState<'today' | 'week' | 'month' | 'year'>('month');
+  const pathname = usePathname();
+  const { user, isAuthenticated, isLoading } = useAuthStore();
+  const { theme } = useThemeStore();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      setSidebarOpen(!mobile);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
       router.push('/login');
-      return;
     }
+  }, [isLoading, isAuthenticated, router]);
 
-    if (isAuthenticated) {
-      fetchDashboardData({ period: timeframe });
-    }
-  }, [authLoading, isAuthenticated, router, timeframe, fetchDashboardData]);
-
-  if (authLoading || !isAuthenticated) {
+  if (isLoading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
       </div>
     );
   }
 
-  const getTrendIcon = (trend: number) => {
-    if (trend > 0) return <TrendingUp className="h-4 w-4 text-green-500" />;
-    if (trend < 0) return <TrendingDown className="h-4 w-4 text-red-500" />;
-    return <Minus className="h-4 w-4 text-muted-foreground" />;
+  const toggleSidebar = () => {
+    setSidebarOpen(!sidebarOpen);
   };
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-muted-foreground">
-              Welcome back, {user?.firstName}! Here's what's happening with your organization.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={timeframe}
-              onChange={(e) => setTimeframe(e.target.value as any)}
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="today">Today</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
-              <option value="year">This Year</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatsCard
-            title="Total Employees"
-            value={overview?.employees?.total ?? 0}
-            icon={<Users className="h-4 w-4" />}
-            description={`${overview?.employees?.active ?? 0} active employees`}
-            loading={isLoading}
-          />
-          <StatsCard
-            title="Attendance Rate"
-            value={`${overview?.attendance?.rate ?? 0}%`}
-            icon={<Clock className="h-4 w-4" />}
-            description={`${overview?.attendance?.present ?? 0} present today`}
-            loading={isLoading}
-            trend={overview?.attendance?.trend}
-          />
-          <StatsCard
-            title="Pending Leave"
-            value={overview?.leave?.pending ?? 0}
-            icon={<Calendar className="h-4 w-4" />}
-            description={`${overview?.leave?.approved ?? 0} approved this period`}
-            loading={isLoading}
-          />
-          <StatsCard
-            title="Overtime Hours"
-            value={`${overview?.overtime?.totalHours ?? 0}h`}
-            icon={<Briefcase className="h-4 w-4" />}
-            description={`${overview?.overtime?.totalRecords ?? 0} overtime records`}
-            loading={isLoading}
-          />
-        </div>
-
-        {/* Charts Row */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <AttendanceChart
-              data={attendanceChart}
-              loading={isLoading}
-            />
-          </div>
-          <div className="lg:col-span-1">
-            <DepartmentStats
-              data={departmentStats}
-              loading={isLoading}
-            />
-          </div>
-        </div>
-
-        {/* Bottom Row */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <RecentActivity
-              activities={recentActivity}
-              loading={isLoading}
-            />
-          </div>
-          <div className="lg:col-span-1">
-            <LeaveStats
-              data={leaveStats}
-              loading={isLoading}
-            />
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <QuickActions />
+    <div
+      className={cn(
+        'min-h-screen bg-background transition-colors duration-300',
+        theme === 'dark' ? 'dark' : ''
+      )}
+    >
+      <Sidebar
+        open={sidebarOpen}
+        onToggle={toggleSidebar}
+        isMobile={isMobile}
+        user={user}
+        pathname={pathname}
+      />
+      <div
+        className={cn(
+          'transition-all duration-300 ease-in-out',
+          sidebarOpen && !isMobile ? 'ml-[280px]' : 'ml-0'
+        )}
+      >
+        <Header
+          onMenuClick={toggleSidebar}
+          isMobile={isMobile}
+          user={user}
+        />
+        <main className="p-4 md:p-6 min-h-[calc(100vh-4rem)]">{children}</main>
       </div>
-    </DashboardLayout>
+    </div>
   );
 }
-
