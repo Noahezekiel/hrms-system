@@ -243,7 +243,7 @@ export default function NewEmployeePage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="phone">Phone</Label>
-                    <Input id="phone" placeholder="+1 234 567 890" {...register('phone')} />
+                    <Input id="phone" placeholder="+2348012345678" {...register('phone')} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="gender">Gender *</Label>

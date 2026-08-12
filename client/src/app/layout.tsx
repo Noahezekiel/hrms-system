@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from '@/components/providers/Providers';
@@ -11,7 +11,12 @@ export const metadata: Metadata = {
   description: 'Enterprise Staff Biometric Attendance & ID Card Management System',
   keywords: 'HRMS, Attendance, Biometric, ID Card, Management',
   authors: [{ name: 'HRMS Team' }],
-  viewport: 'width=device-width, initial-scale=1',
+};
+
+// ✅ Move viewport and themeColor to a separate export
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
   themeColor: '#0f172a',
 };
 
