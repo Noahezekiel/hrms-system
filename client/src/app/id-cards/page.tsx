@@ -8,31 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
-import {
-  QrCode,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  RefreshCw,
-  Print,
-  Plus,
-  Eye,
-  CreditCard,
-  Calendar,
-  User,
-} from 'lucide-react';
+import { QrCode, Search, ChevronLeft, ChevronRight, Download, RefreshCw, Printer, Plus, Eye, CreditCard, Calendar, User } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { IDCard } from '@/types/employee';
 
@@ -232,7 +212,7 @@ export default function IDCardsPage() {
                             size="xs"
                             onClick={() => handleDownload(card.id, 'png')}
                           >
-                            <Print className="h-4 w-4" />
+                            <Printer className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>

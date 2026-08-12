@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
 import {
@@ -21,7 +20,6 @@ import {
   Briefcase,
   Loader2,
   FileSpreadsheet,
-  FilePdf,
 } from 'lucide-react';
 
 type ReportType = 'attendance' | 'leave' | 'employee' | 'overtime' | 'holiday';
@@ -131,7 +129,6 @@ export default function ReportsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
           <p className="text-muted-foreground">
@@ -184,7 +181,7 @@ export default function ReportsPage() {
                       <SelectContent>
                         <SelectItem value="pdf">
                           <div className="flex items-center gap-2">
-                            <FilePdf className="h-4 w-4 text-red-500" />
+                            <FileText className="h-4 w-4 text-red-500" />
                             PDF
                           </div>
                         </SelectItem>
@@ -211,7 +208,6 @@ export default function ReportsPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">All Companies</SelectItem>
-                        {/* Populate with companies from API */}
                       </SelectContent>
                     </Select>
                   </div>
@@ -226,7 +222,6 @@ export default function ReportsPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">All Branches</SelectItem>
-                        {/* Populate with branches from API */}
                       </SelectContent>
                     </Select>
                   </div>
@@ -244,7 +239,6 @@ export default function ReportsPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">All Departments</SelectItem>
-                        {/* Populate with departments from API */}
                       </SelectContent>
                     </Select>
                   </div>
@@ -324,18 +318,6 @@ export default function ReportsPage() {
                     {type.label}
                   </Button>
                 ))}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent Reports</CardTitle>
-                <CardDescription>Previously generated reports</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-4 text-sm text-muted-foreground">
-                  No recent reports
-                </div>
               </CardContent>
             </Card>
           </div>
