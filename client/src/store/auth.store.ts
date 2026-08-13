@@ -44,7 +44,6 @@ export const useAuthStore = create<AuthState>()(
             error: null,
           });
 
-          // Store tokens in API client
           api.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
         } catch (error: any) {
           set({
@@ -88,6 +87,7 @@ export const useAuthStore = create<AuthState>()(
             await api.post('/auth/logout', { refreshToken });
           }
         } catch (error) {
+          // Ignore logout errors – we still clear local state
           console.error('Logout error:', error);
         } finally {
           set({
@@ -125,8 +125,7 @@ export const useAuthStore = create<AuthState>()(
           api.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
         } catch (error) {
           console.error('Session refresh failed:', error);
-          set({ isAuthenticated: false });
-          delete api.defaults.headers.common['Authorization'];
+          await get().logout();
         }
       },
 

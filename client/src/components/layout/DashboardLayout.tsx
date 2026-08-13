@@ -12,7 +12,8 @@ interface DashboardLayoutProps {
   children: ReactNode;
 }
 
-export default function DashboardLayout({ children }: DashboardLayoutProps) {
+// Named export
+export function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, isAuthenticated, isLoading } = useAuthStore();
@@ -26,7 +27,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       setIsMobile(mobile);
       setSidebarOpen(!mobile);
     };
-
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
@@ -80,3 +80,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     </div>
   );
 }
+
+// ✅ Default export (makes both imports work)
+export default DashboardLayout;

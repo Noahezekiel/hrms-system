@@ -37,6 +37,7 @@ export class UploadService {
         },
         (error: UploadApiErrorResponse | undefined, result: UploadApiResponse | undefined) => {
           if (error) {
+            logger.error('Cloudinary upload error:', error);
             reject(error);
           } else if (result) {
             resolve(result);
@@ -55,10 +56,19 @@ export class UploadService {
 
   async uploadSingle(file: Express.Multer.File, userId: string): Promise<UploadResult> {
     try {
+      logger.info(`Starting upload for file: ${file.originalname}, size: ${file.size} bytes`);
+
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        throw new ApiError(400, 'File size exceeds 10MB limit');
+      }
+
       const result = await this.uploadToCloudinary(file.buffer, {
         folder: 'hrms/uploads',
         resourceType: 'auto',
       });
+
+      logger.info(`Upload successful: ${result.secure_url}`);
 
       const uploadResult: UploadResult = {
         publicId: result.public_id,
@@ -78,14 +88,23 @@ export class UploadService {
           action: 'CREATE',
           entity: 'Upload',
           entityId: result.public_id,
-          changes: { filename: file.originalname, size: file.size, url: result.secure_url },
+          changes: JSON.stringify({
+            filename: file.originalname,
+            size: file.size,
+            url: result.secure_url,
+          }),
         },
       });
 
       return uploadResult;
     } catch (error) {
       logger.error('Upload error:', error);
-      throw new ApiError(500, 'Failed to upload file');
+      // Re-throw ApiError or convert to ApiError
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : 'Unknown upload error';
+      throw new ApiError(500, `Failed to upload file: ${message}`);
     }
   }
 
@@ -172,7 +191,7 @@ export class UploadService {
         action: 'UPDATE',
         entity: 'Employee',
         entityId: employeeId,
-        changes: { avatar: result.secure_url },
+        changes: JSON.stringify({ avatar: result.secure_url }),
         companyId: employee.companyId,
         branchId: employee.branchId || null,
       },
@@ -249,7 +268,7 @@ export class UploadService {
         action: 'UPDATE',
         entity: 'Company',
         entityId: companyId,
-        changes: { logo: result.secure_url },
+        changes: JSON.stringify({ logo: result.secure_url }),
         companyId,
       },
     });
@@ -258,7 +277,6 @@ export class UploadService {
   }
 
   async deleteFile(publicId: string, userId: string): Promise<{ deleted: boolean }> {
-    // Check permissions - only allow deleting if user is SUPER_ADMIN or owns the file
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, companyId: true },
@@ -267,11 +285,7 @@ export class UploadService {
       throw new ApiError(404, 'User not found');
     }
 
-    // For simplicity, we allow SUPER_ADMIN to delete any file, others only their company's files
-    // We could add more granular checks, but this is a start
     if (currentUser.role !== 'SUPER_ADMIN') {
-      // Check if the file belongs to this company (we need to parse publicId to find company)
-      // This is complex, we'll skip for now and allow only SUPER_ADMIN to delete
       throw new ApiError(403, 'Only Super Admin can delete files');
     }
 
@@ -282,14 +296,13 @@ export class UploadService {
       throw new ApiError(500, 'Failed to delete file');
     }
 
-    // Log audit
     await prisma.auditLog.create({
       data: {
         userId,
         action: 'DELETE',
         entity: 'Upload',
         entityId: publicId,
-        changes: { publicId },
+        changes: JSON.stringify({ publicId }),
         companyId: currentUser.companyId || undefined,
       },
     });
@@ -298,13 +311,10 @@ export class UploadService {
   }
 
   private extractPublicId(url: string): string | null {
-    // Extract public_id from Cloudinary URL
-    // Example: https://res.cloudinary.com/cloud_name/image/upload/v1234567890/folder/public_id.jpg
     try {
       const parts = url.split('/');
       const filename = parts[parts.length - 1];
       const publicId = filename.split('.')[0];
-      // Include folder path if present
       const uploadIndex = parts.indexOf('upload');
       if (uploadIndex !== -1 && uploadIndex + 1 < parts.length) {
         const folderParts = parts.slice(uploadIndex + 2, parts.length - 1);

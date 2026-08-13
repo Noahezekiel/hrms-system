@@ -35,9 +35,9 @@ if (process.env.NODE_ENV !== 'test') {
   );
 }
 
-// Body parsing
-app.use(json({ limit: '10mb' }));
-app.use(urlencoded({ extended: true, limit: '10mb' }));
+// Body parsing - increased limit for file uploads
+app.use(json({ limit: '50mb' }));
+app.use(urlencoded({ extended: true, limit: '50mb' }));
 
 // Global rate limiting
 app.use('/api', apiLimiter);

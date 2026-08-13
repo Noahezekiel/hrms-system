@@ -11,28 +11,30 @@ export const api: AxiosInstance = axios.create({
   timeout: 30000,
 });
 
-// Request interceptor
+// Request interceptor – attach token
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    // Get token from store
     const token = useAuthStore.getState().accessToken;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor
+// Response interceptor – handle 401 and refresh
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as any;
 
-    // If error is 401 and we haven't tried to refresh yet
+    // Skip refresh for auth endpoints
+    if (originalRequest.url?.includes('/auth/')) {
+      return Promise.reject(error);
+    }
+
+    // If 401 and we haven't retried yet
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
@@ -55,12 +57,13 @@ api.interceptors.response.use(
           isAuthenticated: true,
         });
 
-        // Retry the original request
+        // Retry original request
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh failed, logout
-        useAuthStore.getState().logout();
+        // Refresh failed – logout
+        await useAuthStore.getState().logout();
+        window.location.href = '/login';
         return Promise.reject(refreshError);
       }
     }

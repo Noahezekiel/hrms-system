@@ -1,22 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import DashboardLayout from '@/components/layout/DashboardLayout';
+import { DashboardLayout }  from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
-import { ChevronLeft, Loader2, Upload, UserPlus, Building2, Briefcase, Mail, Phone, MapPin } from 'lucide-react';
+import { ChevronLeft, Loader2, Upload, X, User, AlertCircle } from 'lucide-react';
 import { Company, Branch, Department, Position } from '@/types/employee';
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
 const employeeSchema = z.object({
   employeeId: z.string().min(1, 'Employee ID is required'),
@@ -41,6 +45,7 @@ const employeeSchema = z.object({
   emergencyContact: z.string().optional(),
   emergencyPhone: z.string().optional(),
   notes: z.string().optional(),
+  avatar: z.string().optional(),
 });
 
 type EmployeeFormData = z.infer<typeof employeeSchema>;
@@ -49,13 +54,20 @@ export default function NewEmployeePage() {
   const router = useRouter();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [companiesLoading, setCompaniesLoading] = useState(true);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [managers, setManagers] = useState<any[]>([]);
   const [selectedCompany, setSelectedCompany] = useState('');
+
+  // Avatar state
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -65,14 +77,19 @@ export default function NewEmployeePage() {
     formState: { errors },
   } = useForm<EmployeeFormData>({
     resolver: zodResolver(employeeSchema),
+    defaultValues: {
+      gender: 'MALE',
+    },
   });
 
   const watchCompanyId = watch('companyId');
 
+  // Fetch companies on mount
   useEffect(() => {
     fetchCompanies();
   }, []);
 
+  // Fetch branches, departments, managers when company changes
   useEffect(() => {
     if (watchCompanyId) {
       fetchBranches(watchCompanyId);
@@ -83,11 +100,26 @@ export default function NewEmployeePage() {
   }, [watchCompanyId]);
 
   const fetchCompanies = async () => {
+    setCompaniesLoading(true);
     try {
       const response = await api.get('/companies', { params: { limit: 100 } });
       setCompanies(response.data.data);
-    } catch (error) {
+      if (response.data.data.length === 0) {
+        toast({
+          title: 'No Companies Found',
+          description: 'Please create a company first before adding employees.',
+          variant: 'warning',
+        });
+      }
+    } catch (error: any) {
       console.error('Failed to fetch companies:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to load companies. Please refresh.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCompaniesLoading(false);
     }
   };
 
@@ -139,45 +171,113 @@ export default function NewEmployeePage() {
     }
   };
 
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+      toast({
+        title: 'Invalid file type',
+        description: 'Please upload a JPG, PNG, GIF, or WEBP image.',
+        variant: 'destructive',
+      });
+      e.target.value = '';
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      toast({
+        title: 'File too large',
+        description: 'Image must be less than 5MB.',
+        variant: 'destructive',
+      });
+      e.target.value = '';
+      return;
+    }
+
+    setAvatarFile(file);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setAvatarPreview(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeAvatar = () => {
+    setAvatarFile(null);
+    setAvatarPreview('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setValue('avatar', '');
+  };
+
   const onSubmit = async (data: EmployeeFormData) => {
     setLoading(true);
     setError(null);
+
     try {
-      await api.post('/employees', data);
-      toast({
-        title: 'Success',
-        description: 'Employee created successfully',
-      });
+      let avatarUrl = '';
+
+      if (avatarFile) {
+        setUploadingAvatar(true);
+        try {
+          const formData = new FormData();
+          formData.append('file', avatarFile);
+          const uploadRes = await api.post('/upload/single', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 60000,
+          });
+          avatarUrl = uploadRes.data.data.secureUrl;
+          setUploadingAvatar(false);
+        } catch (uploadError: any) {
+          setUploadingAvatar(false);
+          const errorMessage =
+            uploadError.response?.data?.message ||
+            uploadError.message ||
+            'Failed to upload photo.';
+          setError(`Avatar upload failed: ${errorMessage}`);
+          toast({ title: 'Upload Failed', description: errorMessage, variant: 'destructive' });
+          setLoading(false);
+          return;
+        }
+      }
+
+      const employeeData = { ...data, avatar: avatarUrl };
+
+      // Convert empty strings to null for optional foreign keys
+      employeeData.managerId = employeeData.managerId || null;
+      employeeData.branchId = employeeData.branchId || null;
+      employeeData.departmentId = employeeData.departmentId || null;
+      employeeData.positionId = employeeData.positionId || null;
+
+      await api.post('/employees', employeeData);
+      toast({ title: 'Success', description: 'Employee created successfully' });
       router.push('/employees');
     } catch (error: any) {
-      setError(error.response?.data?.message || 'Failed to create employee');
+      const errorMessage = error.response?.data?.message || 'Failed to create employee';
+      setError(errorMessage);
+      toast({ title: 'Error', description: errorMessage, variant: 'destructive' });
     } finally {
       setLoading(false);
+      setUploadingAvatar(false);
     }
   };
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
         <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.back()}
-          >
+          <Button variant="ghost" size="icon" onClick={() => router.back()}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Add New Employee</h1>
-            <p className="text-muted-foreground">
-              Create a new employee record in the system
-            </p>
+            <p className="text-muted-foreground">Create a new employee record in the system</p>
           </div>
         </div>
 
         {error && (
           <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
@@ -195,47 +295,79 @@ export default function NewEmployeePage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Personal Information</CardTitle>
-                  <CardDescription>
-                    Enter the employee's personal details
-                  </CardDescription>
+                  <CardDescription>Enter the employee's personal details</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 md:grid-cols-2">
+                  {/* Avatar Upload */}
+                  <div className="md:col-span-2">
+                    <Label>Passport Photo</Label>
+                    <div className="mt-2 flex items-center gap-6">
+                      <div className="relative h-24 w-24 overflow-hidden rounded-full border-2 border-dashed border-muted-foreground/25">
+                        {avatarPreview ? (
+                          <img src={avatarPreview} alt="Avatar preview" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-muted">
+                            <User className="h-8 w-8 text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={uploadingAvatar}
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          Upload Photo
+                        </Button>
+                        {avatarPreview && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={removeAvatar}
+                            disabled={uploadingAvatar}
+                          >
+                            <X className="mr-2 h-4 w-4" />
+                            Remove
+                          </Button>
+                        )}
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleAvatarChange}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Recommended: Square image, max 5MB (JPG, PNG, WEBP)
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="employeeId">Employee ID *</Label>
-                    <Input
-                      id="employeeId"
-                      placeholder="EMP-001"
-                      {...register('employeeId')}
-                    />
-                    {errors.employeeId && (
-                      <p className="text-sm text-destructive">{errors.employeeId.message}</p>
-                    )}
+                    <Input id="employeeId" placeholder="EMP-001" {...register('employeeId')} />
+                    {errors.employeeId && <p className="text-sm text-destructive">{errors.employeeId.message}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email *</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="employee@company.com"
-                      {...register('email')}
-                    />
-                    {errors.email && (
-                      <p className="text-sm text-destructive">{errors.email.message}</p>
-                    )}
+                    <Input id="email" type="email" placeholder="employee@company.com" {...register('email')} />
+                    {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="firstName">First Name *</Label>
                     <Input id="firstName" {...register('firstName')} />
-                    {errors.firstName && (
-                      <p className="text-sm text-destructive">{errors.firstName.message}</p>
-                    )}
+                    {errors.firstName && <p className="text-sm text-destructive">{errors.firstName.message}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="lastName">Last Name *</Label>
                     <Input id="lastName" {...register('lastName')} />
-                    {errors.lastName && (
-                      <p className="text-sm text-destructive">{errors.lastName.message}</p>
-                    )}
+                    {errors.lastName && <p className="text-sm text-destructive">{errors.lastName.message}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="middleName">Middle Name</Label>
@@ -243,13 +375,11 @@ export default function NewEmployeePage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="phone">Phone</Label>
-                    <Input id="phone" placeholder="+2348012345678" {...register('phone')} />
+                    <Input id="phone" placeholder="+1 234 567 890" {...register('phone')} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="gender">Gender *</Label>
-                    <Select
-                      onValueChange={(value) => setValue('gender', value as any)}
-                    >
+                    <Select onValueChange={(value) => setValue('gender', value as any)} defaultValue="MALE">
                       <SelectTrigger>
                         <SelectValue placeholder="Select gender" />
                       </SelectTrigger>
@@ -259,16 +389,12 @@ export default function NewEmployeePage() {
                         <SelectItem value="OTHER">Other</SelectItem>
                       </SelectContent>
                     </Select>
-                    {errors.gender && (
-                      <p className="text-sm text-destructive">{errors.gender.message}</p>
-                    )}
+                    {errors.gender && <p className="text-sm text-destructive">{errors.gender.message}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="dateOfBirth">Date of Birth *</Label>
                     <Input id="dateOfBirth" type="date" {...register('dateOfBirth')} />
-                    {errors.dateOfBirth && (
-                      <p className="text-sm text-destructive">{errors.dateOfBirth.message}</p>
-                    )}
+                    {errors.dateOfBirth && <p className="text-sm text-destructive">{errors.dateOfBirth.message}</p>}
                   </div>
                 </CardContent>
               </Card>
@@ -278,11 +404,10 @@ export default function NewEmployeePage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Employment Details</CardTitle>
-                  <CardDescription>
-                    Enter employment and organizational information
-                  </CardDescription>
+                  <CardDescription>Enter employment and organizational information</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 md:grid-cols-2">
+                  {/* Company Dropdown */}
                   <div className="space-y-2">
                     <Label htmlFor="companyId">Company *</Label>
                     <Select
@@ -295,9 +420,14 @@ export default function NewEmployeePage() {
                         setDepartments([]);
                         setPositions([]);
                       }}
+                      disabled={companiesLoading || companies.length === 0}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select company" />
+                        <SelectValue placeholder={
+                          companiesLoading ? 'Loading companies...' : 
+                          companies.length === 0 ? 'No companies available' : 
+                          'Select company'
+                        } />
                       </SelectTrigger>
                       <SelectContent>
                         {companies.map((company) => (
@@ -307,17 +437,20 @@ export default function NewEmployeePage() {
                         ))}
                       </SelectContent>
                     </Select>
-                    {errors.companyId && (
-                      <p className="text-sm text-destructive">{errors.companyId.message}</p>
+                    {errors.companyId && <p className="text-sm text-destructive">{errors.companyId.message}</p>}
+                    {companies.length === 0 && !companiesLoading && (
+                      <p className="text-sm text-muted-foreground">
+                        No companies found. Please create a company first.
+                      </p>
                     )}
                   </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="hireDate">Hire Date *</Label>
                     <Input id="hireDate" type="date" {...register('hireDate')} />
-                    {errors.hireDate && (
-                      <p className="text-sm text-destructive">{errors.hireDate.message}</p>
-                    )}
+                    {errors.hireDate && <p className="text-sm text-destructive">{errors.hireDate.message}</p>}
                   </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="branchId">Branch</Label>
                     <Select
@@ -337,6 +470,7 @@ export default function NewEmployeePage() {
                       </SelectContent>
                     </Select>
                   </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="departmentId">Department</Label>
                     <Select
@@ -356,6 +490,7 @@ export default function NewEmployeePage() {
                       </SelectContent>
                     </Select>
                   </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="positionId">Position</Label>
                     <Select
@@ -375,6 +510,7 @@ export default function NewEmployeePage() {
                       </SelectContent>
                     </Select>
                   </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="managerId">Manager</Label>
                     <Select
@@ -402,9 +538,7 @@ export default function NewEmployeePage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Contact Information</CardTitle>
-                  <CardDescription>
-                    Enter address and contact details
-                  </CardDescription>
+                  <CardDescription>Enter address and contact details</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2 md:col-span-2">
@@ -435,9 +569,7 @@ export default function NewEmployeePage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Emergency Contact</CardTitle>
-                  <CardDescription>
-                    Enter emergency contact information
-                  </CardDescription>
+                  <CardDescription>Enter emergency contact information</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
@@ -458,22 +590,18 @@ export default function NewEmployeePage() {
           </Tabs>
 
           <div className="flex items-center justify-end gap-4 pt-4 border-t">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => router.back()}
-            >
+            <Button type="button" variant="outline" onClick={() => router.back()} disabled={loading}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || uploadingAvatar}>
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating...
+                  {uploadingAvatar ? 'Uploading avatar...' : 'Creating...'}
                 </>
               ) : (
                 <>
-                  <UserPlus className="mr-2 h-4 w-4" />
+                  <User className="mr-2 h-4 w-4" />
                   Create Employee
                 </>
               )}

@@ -100,6 +100,18 @@ export function Sidebar({ open, onToggle, isMobile, user, pathname }: SidebarPro
       roles: ['SUPER_ADMIN', 'COMPANY_ADMIN', 'HR_MANAGER'],
     },
     {
+      title: 'Branches',
+      href: '/branches',
+      icon: Building2,
+      roles: ['SUPER_ADMIN', 'COMPANY_ADMIN', 'HR_MANAGER'],
+    },
+    {
+      title: 'Positions',
+      href: '/positions',
+      icon: Briefcase,
+      roles: ['SUPER_ADMIN', 'COMPANY_ADMIN', 'HR_MANAGER'],
+    },
+    {
       title: 'Reports',
       href: '/reports',
       icon: BarChart3,
