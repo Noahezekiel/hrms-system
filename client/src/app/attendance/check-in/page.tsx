@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/store/auth.store';
 import {
   Clock,
   LogIn,
@@ -20,25 +21,80 @@ import {
   Loader2,
   Camera,
   MapPin,
-  CheckCircle2,
-  XCircle,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import { formatDateTime } from '@/lib/utils';
 
 type ActionType = 'checkin' | 'checkout' | 'breakin' | 'breakout';
 
+interface Employee {
+  id: string;
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  avatar?: string;
+}
+
+interface TodayAttendance {
+  id: string;
+  checkIn?: string;
+  checkOut?: string;
+  breakIn?: string;
+  breakOut?: string;
+  totalHours?: number;
+}
+
 export default function CheckInPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { user } = useAuthStore();
   const [loading, setLoading] = useState(false);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(true);
   const [employeeId, setEmployeeId] = useState('');
   const [action, setAction] = useState<ActionType>('checkin');
   const [photo, setPhoto] = useState<string | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [note, setNote] = useState('');
-  const [todayAttendance, setTodayAttendance] = useState<any>(null);
+  const [todayAttendance, setTodayAttendance] = useState<TodayAttendance | null>(null);
   const [checkingLocation, setCheckingLocation] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [videoRef, setVideoRef] = useState<HTMLVideoElement | null>(null);
+  const [streamRef, setStreamRef] = useState<MediaStream | null>(null);
+
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
+
+  useEffect(() => {
+    if (employeeId) {
+      fetchTodayAttendance();
+    } else {
+      setTodayAttendance(null);
+    }
+  }, [employeeId]);
+
+  const fetchEmployees = async () => {
+    setLoadingEmployees(true);
+    try {
+      const params: any = { limit: 100, isActive: true };
+      if (user?.role === 'STAFF' && user?.employeeId) {
+        params.employeeId = user.employeeId;
+      }
+      const response = await api.get('/employees', { params });
+      setEmployees(response.data.data);
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to load employees',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
 
   const fetchTodayAttendance = async () => {
     if (!employeeId) return;
@@ -53,12 +109,6 @@ export default function CheckInPage() {
     }
   };
 
-  useEffect(() => {
-    if (employeeId) {
-      fetchTodayAttendance();
-    }
-  }, [employeeId]);
-
   const getCurrentLocation = () => {
     setCheckingLocation(true);
     if (navigator.geolocation) {
@@ -69,10 +119,7 @@ export default function CheckInPage() {
             lng: position.coords.longitude,
           });
           setCheckingLocation(false);
-          toast({
-            title: 'Location captured',
-            description: 'Your location has been recorded',
-          });
+          toast({ title: 'Location captured', description: 'Your location has been recorded' });
         },
         (error) => {
           setCheckingLocation(false);
@@ -93,14 +140,57 @@ export default function CheckInPage() {
     }
   };
 
+  const openCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 } },
+      });
+      setStreamRef(stream);
+      setIsCameraOpen(true);
+      if (videoRef) {
+        videoRef.srcObject = stream;
+        videoRef.play();
+      }
+      toast({ title: 'Camera opened', description: 'Click "Capture Photo" to take a snapshot.' });
+    } catch (error: any) {
+      toast({
+        title: 'Camera error',
+        description: error.message || 'Unable to access camera. Please allow camera permissions.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const closeCamera = () => {
+    if (streamRef) {
+      streamRef.getTracks().forEach(track => track.stop());
+      setStreamRef(null);
+    }
+    setIsCameraOpen(false);
+    if (videoRef) {
+      videoRef.srcObject = null;
+    }
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.videoWidth;
+    canvas.height = videoRef.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoRef, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    setPhoto(dataUrl);
+    closeCamera();
+    toast({ title: 'Photo captured', description: 'Your photo has been captured successfully' });
+  };
+
   const handleCapturePhoto = () => {
-    // In production, this would open camera
-    // For demo, we'll use a placeholder
-    setPhoto('placeholder-photo-url');
-    toast({
-      title: 'Photo captured',
-      description: 'Your photo has been captured successfully',
-    });
+    if (isCameraOpen) {
+      capturePhoto();
+    } else {
+      openCamera();
+    }
   };
 
   const handleSubmit = async () => {
@@ -148,13 +238,25 @@ export default function CheckInPage() {
       }
 
       await api.post(endpoint, payload);
-      toast({
-        title: 'Success',
-        description: successMessage,
-      });
+      
+      // Auto-switch to checkout after check-in
+      if (action === 'checkin') {
+        setAction('checkout');
+        toast({
+          title: 'Success',
+          description: 'Check-in successful. You can now check out.',
+        });
+      } else {
+        toast({
+          title: 'Success',
+          description: successMessage,
+        });
+      }
+      
       await fetchTodayAttendance();
       setNote('');
       setPhoto(null);
+      if (isCameraOpen) closeCamera();
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -168,27 +270,19 @@ export default function CheckInPage() {
 
   const getActionLabel = () => {
     switch (action) {
-      case 'checkin':
-        return 'Check In';
-      case 'checkout':
-        return 'Check Out';
-      case 'breakin':
-        return 'Break In';
-      case 'breakout':
-        return 'Break Out';
+      case 'checkin': return 'Check In';
+      case 'checkout': return 'Check Out';
+      case 'breakin': return 'Break In';
+      case 'breakout': return 'Break Out';
     }
   };
 
   const getActionIcon = () => {
     switch (action) {
-      case 'checkin':
-        return <LogIn className="h-5 w-5" />;
-      case 'checkout':
-        return <LogOut className="h-5 w-5" />;
-      case 'breakin':
-        return <Coffee className="h-5 w-5" />;
-      case 'breakout':
-        return <Coffee className="h-5 w-5" />;
+      case 'checkin': return <LogIn className="h-5 w-5" />;
+      case 'checkout': return <LogOut className="h-5 w-5" />;
+      case 'breakin': return <Coffee className="h-5 w-5" />;
+      case 'breakout': return <Coffee className="h-5 w-5" />;
     }
   };
 
@@ -230,6 +324,7 @@ export default function CheckInPage() {
                       size="sm"
                       onClick={() => setAction(act)}
                       className="flex flex-col items-center gap-1 h-auto py-2"
+                      disabled={act === 'checkout' && !todayAttendance?.checkIn}
                     >
                       {act === 'checkin' && <LogIn className="h-4 w-4" />}
                       {act === 'checkout' && <LogOut className="h-4 w-4" />}
@@ -248,12 +343,19 @@ export default function CheckInPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="employeeId">Employee</Label>
-                <Select value={employeeId} onValueChange={setEmployeeId}>
+                <Select value={employeeId} onValueChange={setEmployeeId} disabled={loadingEmployees}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select employee" />
+                    <SelectValue placeholder={loadingEmployees ? 'Loading employees...' : 'Select employee'} />
                   </SelectTrigger>
                   <SelectContent>
-                    {/* Populate with employees from API */}
+                    {employees.length === 0 && !loadingEmployees && (
+                      <SelectItem value="" disabled>No employees found</SelectItem>
+                    )}
+                    {employees.map((emp) => (
+                      <SelectItem key={emp.id} value={emp.id}>
+                        {emp.firstName} {emp.lastName} ({emp.employeeId})
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -285,19 +387,44 @@ export default function CheckInPage() {
 
               <div className="space-y-2">
                 <Label>Photo</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCapturePhoto}
-                >
-                  <Camera className="mr-2 h-4 w-4" />
-                  Capture Photo
-                </Button>
-                {photo && (
-                  <span className="text-xs text-muted-foreground ml-2">
-                    ✓ Photo captured
-                  </span>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCapturePhoto}
+                    disabled={isCameraOpen && !videoRef}
+                  >
+                    <Camera className="mr-2 h-4 w-4" />
+                    {isCameraOpen ? 'Capture Photo' : 'Open Camera'}
+                  </Button>
+                  {isCameraOpen && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={closeCamera}
+                    >
+                      <X className="mr-2 h-4 w-4" />
+                      Close Camera
+                    </Button>
+                  )}
+                  {photo && (
+                    <span className="text-xs text-muted-foreground flex items-center">
+                      ✓ Photo captured
+                    </span>
+                  )}
+                </div>
+                {isCameraOpen && (
+                  <div className="mt-2 rounded-lg overflow-hidden border">
+                    <video
+                      ref={(el) => setVideoRef(el)}
+                      className="w-full max-h-48 object-cover"
+                      muted
+                      autoPlay
+                      playsInline
+                    />
+                  </div>
                 )}
               </div>
 
