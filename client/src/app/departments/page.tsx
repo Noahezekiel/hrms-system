@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +50,7 @@ import { Department } from '@/types/employee';
 export default function DepartmentsPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -129,6 +131,12 @@ export default function DepartmentsPage() {
       setEditingDepartment(null);
       setFormData({ name: '', code: '', description: '', companyId: '', branchId: '' });
       fetchDepartments();
+      
+      // Invalidate React Query caches so that other pages (like Add Employee) refetch
+      queryClient.invalidateQueries({ queryKey: ['departments'] });
+      if (formData.companyId) {
+        queryClient.invalidateQueries({ queryKey: ['departments', formData.companyId] });
+      }
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -144,6 +152,7 @@ export default function DepartmentsPage() {
       await api.delete(`/departments/${id}`);
       toast({ title: 'Success', description: 'Department deleted successfully' });
       fetchDepartments();
+      queryClient.invalidateQueries({ queryKey: ['departments'] });
     } catch (error: any) {
       toast({
         title: 'Error',

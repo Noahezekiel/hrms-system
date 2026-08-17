@@ -12,8 +12,6 @@ import { RecentActivity } from '@/components/dashboard/RecentActivity';
 import { LeaveStats } from '@/components/dashboard/LeaveStats';
 import { QuickActions } from '@/components/dashboard/QuickActions';
 import { Loader2, Users, Clock, Calendar, Briefcase, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -27,6 +25,10 @@ export default function DashboardPage() {
     isLoading,
     error,
     fetchDashboardData,
+    fetchAttendanceChart,
+    fetchDepartmentStats,
+    fetchRecentActivity,
+    fetchLeaveStats,
   } = useDashboardStore();
 
   const [timeframe, setTimeframe] = useState<'today' | 'week' | 'month' | 'year'>('month');
@@ -38,9 +40,24 @@ export default function DashboardPage() {
     }
 
     if (isAuthenticated) {
+      // Fetch all dashboard data
       fetchDashboardData({ period: timeframe });
+      fetchAttendanceChart({ period: timeframe });
+      fetchDepartmentStats();
+      fetchRecentActivity({ limit: 10 });
+      fetchLeaveStats();
     }
-  }, [authLoading, isAuthenticated, router, timeframe, fetchDashboardData]);
+  }, [
+    authLoading,
+    isAuthenticated,
+    router,
+    timeframe,
+    fetchDashboardData,
+    fetchAttendanceChart,
+    fetchDepartmentStats,
+    fetchRecentActivity,
+    fetchLeaveStats,
+  ]);
 
   if (authLoading || !isAuthenticated) {
     return (
@@ -117,32 +134,20 @@ export default function DashboardPage() {
         {/* Charts Row */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <div className="lg:col-span-2">
-            <AttendanceChart
-              data={attendanceChart}
-              loading={isLoading}
-            />
+            <AttendanceChart data={attendanceChart} loading={isLoading} />
           </div>
           <div className="lg:col-span-1">
-            <DepartmentStats
-              data={departmentStats}
-              loading={isLoading}
-            />
+            <DepartmentStats data={departmentStats} loading={isLoading} />
           </div>
         </div>
 
         {/* Bottom Row */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <div className="lg:col-span-2">
-            <RecentActivity
-              activities={recentActivity}
-              loading={isLoading}
-            />
+            <RecentActivity activities={recentActivity} loading={isLoading} />
           </div>
           <div className="lg:col-span-1">
-            <LeaveStats
-              data={leaveStats}
-              loading={isLoading}
-            />
+            <LeaveStats data={leaveStats} loading={isLoading} />
           </div>
         </div>
 

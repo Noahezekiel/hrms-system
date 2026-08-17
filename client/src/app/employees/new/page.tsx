@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { DashboardLayout }  from '@/components/layout/DashboardLayout';
+import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -56,13 +57,6 @@ export default function NewEmployeePage() {
   const [loading, setLoading] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [companiesLoading, setCompaniesLoading] = useState(true);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [managers, setManagers] = useState<any[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState('');
 
   // Avatar state
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -83,92 +77,68 @@ export default function NewEmployeePage() {
   });
 
   const watchCompanyId = watch('companyId');
+  const watchDepartmentId = watch('departmentId');
 
-  // Fetch companies on mount
-  useEffect(() => {
-    fetchCompanies();
-  }, []);
+  // --- React Query hooks ---
+  // Companies
+  const { data: companies = [], isLoading: companiesLoading } = useQuery({
+    queryKey: ['companies'],
+    queryFn: async () => {
+      const res = await api.get('/companies', { params: { limit: 100 } });
+      return res.data.data;
+    },
+  });
 
-  // Fetch branches, departments, managers when company changes
-  useEffect(() => {
-    if (watchCompanyId) {
-      fetchBranches(watchCompanyId);
-      fetchDepartments(watchCompanyId);
-      fetchManagers(watchCompanyId);
-      setSelectedCompany(watchCompanyId);
-    }
-  }, [watchCompanyId]);
+  // Branches (depends on companyId)
+  const { data: branches = [], isLoading: branchesLoading } = useQuery({
+    queryKey: ['branches', watchCompanyId],
+    queryFn: async () => {
+      if (!watchCompanyId) return [];
+      const res = await api.get(`/companies/${watchCompanyId}/branches`);
+      return res.data.data;
+    },
+    enabled: !!watchCompanyId,
+  });
 
-  const fetchCompanies = async () => {
-    setCompaniesLoading(true);
-    try {
-      const response = await api.get('/companies', { params: { limit: 100 } });
-      setCompanies(response.data.data);
-      if (response.data.data.length === 0) {
-        toast({
-          title: 'No Companies Found',
-          description: 'Please create a company first before adding employees.',
-          variant: 'warning',
-        });
-      }
-    } catch (error: any) {
-      console.error('Failed to fetch companies:', error);
-      toast({
-        title: 'Error',
-        description: error.response?.data?.message || 'Failed to load companies. Please refresh.',
-        variant: 'destructive',
+  // Departments (depends on companyId)
+  const { data: departments = [], isLoading: departmentsLoading } = useQuery({
+    queryKey: ['departments', watchCompanyId],
+    queryFn: async () => {
+      if (!watchCompanyId) return [];
+      const res = await api.get(`/companies/${watchCompanyId}/departments`);
+      return res.data.data;
+    },
+    enabled: !!watchCompanyId,
+  });
+
+  // Positions (depends on departmentId)
+  const { data: positions = [], isLoading: positionsLoading } = useQuery({
+    queryKey: ['positions', watchDepartmentId],
+    queryFn: async () => {
+      if (!watchDepartmentId) return [];
+      const res = await api.get(`/departments/${watchDepartmentId}/positions`);
+      return res.data.data;
+    },
+    enabled: !!watchDepartmentId,
+  });
+
+  // Managers (depends on companyId)
+  const { data: managers = [], isLoading: managersLoading } = useQuery({
+    queryKey: ['managers', watchCompanyId],
+    queryFn: async () => {
+      if (!watchCompanyId) return [];
+      const res = await api.get('/employees', {
+        params: { companyId: watchCompanyId, limit: 100, isActive: true },
       });
-    } finally {
-      setCompaniesLoading(false);
-    }
-  };
+      return res.data.data;
+    },
+    enabled: !!watchCompanyId,
+  });
 
-  const fetchBranches = async (companyId: string) => {
-    try {
-      const response = await api.get(`/companies/${companyId}/branches`);
-      setBranches(response.data.data);
-    } catch (error) {
-      console.error('Failed to fetch branches:', error);
-    }
-  };
-
-  const fetchDepartments = async (companyId: string) => {
-    try {
-      const response = await api.get(`/companies/${companyId}/departments`);
-      setDepartments(response.data.data);
-    } catch (error) {
-      console.error('Failed to fetch departments:', error);
-    }
-  };
-
-  const fetchManagers = async (companyId: string) => {
-    try {
-      const response = await api.get('/employees', {
-        params: { companyId, limit: 100, isActive: true },
-      });
-      setManagers(response.data.data);
-    } catch (error) {
-      console.error('Failed to fetch managers:', error);
-    }
-  };
-
-  const fetchPositions = async (departmentId: string) => {
-    try {
-      const response = await api.get(`/departments/${departmentId}/positions`);
-      setPositions(response.data.data);
-    } catch (error) {
-      console.error('Failed to fetch positions:', error);
-    }
-  };
-
+  // --- Handlers ---
   const onDepartmentChange = (departmentId: string) => {
     setValue('departmentId', departmentId);
     setValue('positionId', '');
-    if (departmentId) {
-      fetchPositions(departmentId);
-    } else {
-      setPositions([]);
-    }
   };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -262,6 +232,9 @@ export default function NewEmployeePage() {
     }
   };
 
+  // Check if there are no companies and we're not loading
+  const noCompanies = !companiesLoading && companies.length === 0;
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -291,6 +264,7 @@ export default function NewEmployeePage() {
               <TabsTrigger value="emergency">Emergency</TabsTrigger>
             </TabsList>
 
+            {/* Personal Info Tab */}
             <TabsContent value="personal" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -298,7 +272,6 @@ export default function NewEmployeePage() {
                   <CardDescription>Enter the employee's personal details</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 md:grid-cols-2">
-                  {/* Avatar Upload */}
                   <div className="md:col-span-2">
                     <Label>Passport Photo</Label>
                     <div className="mt-2 flex items-center gap-6">
@@ -400,6 +373,7 @@ export default function NewEmployeePage() {
               </Card>
             </TabsContent>
 
+            {/* Employment Tab */}
             <TabsContent value="employment" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -407,7 +381,6 @@ export default function NewEmployeePage() {
                   <CardDescription>Enter employment and organizational information</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 md:grid-cols-2">
-                  {/* Company Dropdown */}
                   <div className="space-y-2">
                     <Label htmlFor="companyId">Company *</Label>
                     <Select
@@ -416,16 +389,13 @@ export default function NewEmployeePage() {
                         setValue('branchId', '');
                         setValue('departmentId', '');
                         setValue('positionId', '');
-                        setBranches([]);
-                        setDepartments([]);
-                        setPositions([]);
                       }}
-                      disabled={companiesLoading || companies.length === 0}
+                      disabled={companiesLoading || noCompanies}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder={
-                          companiesLoading ? 'Loading companies...' : 
-                          companies.length === 0 ? 'No companies available' : 
+                          companiesLoading ? 'Loading companies...' :
+                          noCompanies ? 'No companies available' :
                           'Select company'
                         } />
                       </SelectTrigger>
@@ -438,7 +408,7 @@ export default function NewEmployeePage() {
                       </SelectContent>
                     </Select>
                     {errors.companyId && <p className="text-sm text-destructive">{errors.companyId.message}</p>}
-                    {companies.length === 0 && !companiesLoading && (
+                    {noCompanies && (
                       <p className="text-sm text-muted-foreground">
                         No companies found. Please create a company first.
                       </p>
@@ -455,10 +425,10 @@ export default function NewEmployeePage() {
                     <Label htmlFor="branchId">Branch</Label>
                     <Select
                       onValueChange={(value) => setValue('branchId', value)}
-                      disabled={!watchCompanyId}
+                      disabled={!watchCompanyId || branchesLoading}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select branch" />
+                        <SelectValue placeholder={branchesLoading ? 'Loading...' : 'Select branch'} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">None</SelectItem>
@@ -475,10 +445,10 @@ export default function NewEmployeePage() {
                     <Label htmlFor="departmentId">Department</Label>
                     <Select
                       onValueChange={(value) => onDepartmentChange(value)}
-                      disabled={!watchCompanyId}
+                      disabled={!watchCompanyId || departmentsLoading}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select department" />
+                        <SelectValue placeholder={departmentsLoading ? 'Loading...' : 'Select department'} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">None</SelectItem>
@@ -495,10 +465,10 @@ export default function NewEmployeePage() {
                     <Label htmlFor="positionId">Position</Label>
                     <Select
                       onValueChange={(value) => setValue('positionId', value)}
-                      disabled={!watch('departmentId')}
+                      disabled={!watchDepartmentId || positionsLoading}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select position" />
+                        <SelectValue placeholder={positionsLoading ? 'Loading...' : 'Select position'} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">None</SelectItem>
@@ -515,10 +485,10 @@ export default function NewEmployeePage() {
                     <Label htmlFor="managerId">Manager</Label>
                     <Select
                       onValueChange={(value) => setValue('managerId', value)}
-                      disabled={!watchCompanyId}
+                      disabled={!watchCompanyId || managersLoading}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select manager" />
+                        <SelectValue placeholder={managersLoading ? 'Loading...' : 'Select manager'} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">None</SelectItem>
@@ -534,6 +504,7 @@ export default function NewEmployeePage() {
               </Card>
             </TabsContent>
 
+            {/* Contact Tab */}
             <TabsContent value="contact" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -565,6 +536,7 @@ export default function NewEmployeePage() {
               </Card>
             </TabsContent>
 
+            {/* Emergency Tab */}
             <TabsContent value="emergency" className="space-y-4">
               <Card>
                 <CardHeader>

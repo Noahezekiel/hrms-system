@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,6 +59,7 @@ interface Position {
 export default function PositionsPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [positions, setPositions] = useState<Position[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,6 +123,12 @@ export default function PositionsPage() {
       setEditingPosition(null);
       resetForm();
       fetchPositions();
+      
+      // Invalidate React Query caches
+      queryClient.invalidateQueries({ queryKey: ['positions'] });
+      if (formData.departmentId) {
+        queryClient.invalidateQueries({ queryKey: ['positions', formData.departmentId] });
+      }
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -136,6 +144,7 @@ export default function PositionsPage() {
       await api.delete(`/positions/${id}`);
       toast({ title: 'Success', description: 'Position deleted successfully' });
       fetchPositions();
+      queryClient.invalidateQueries({ queryKey: ['positions'] });
     } catch (error: any) {
       toast({
         title: 'Error',

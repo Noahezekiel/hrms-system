@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,6 +65,7 @@ interface Branch {
 export default function BranchesPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [companies, setCompanies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,6 +135,12 @@ export default function BranchesPage() {
       setEditingBranch(null);
       resetForm();
       fetchBranches();
+      
+      // Invalidate React Query caches
+      queryClient.invalidateQueries({ queryKey: ['branches'] });
+      if (formData.companyId) {
+        queryClient.invalidateQueries({ queryKey: ['branches', formData.companyId] });
+      }
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -148,6 +156,7 @@ export default function BranchesPage() {
       await api.delete(`/branches/${id}`);
       toast({ title: 'Success', description: 'Branch deleted successfully' });
       fetchBranches();
+      queryClient.invalidateQueries({ queryKey: ['branches'] });
     } catch (error: any) {
       toast({
         title: 'Error',
