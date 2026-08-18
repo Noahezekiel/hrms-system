@@ -73,7 +73,7 @@ export function Sidebar({ open, onToggle, isMobile, user, pathname }: SidebarPro
       title: 'Attendance',
       href: '/attendance',
       icon: Clock,
-      roles: ['SUPER_ADMIN', 'COMPANY_ADMIN', 'HR_MANAGER', 'ATTENDANCE_OFFICER', 'DEPARTMENT_MANAGER'],
+      roles: ['SUPER_ADMIN', 'COMPANY_ADMIN', 'HR_MANAGER', 'ATTENDANCE_OFFICER', 'DEPARTMENT_MANAGER', 'STAFF'],
     },
     {
       title: 'Leave Management',
@@ -127,6 +127,12 @@ export function Sidebar({ open, onToggle, isMobile, user, pathname }: SidebarPro
       title: 'Audit Logs',
       href: '/audit-logs',
       icon: FileText,
+      roles: ['SUPER_ADMIN', 'COMPANY_ADMIN'],
+    },
+    {
+      title: 'Users',
+      href: '/users',
+      icon: Users,
       roles: ['SUPER_ADMIN', 'COMPANY_ADMIN'],
     },
     {

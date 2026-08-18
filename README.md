@@ -236,5 +236,14 @@ cd client && npm run build
 License
 This project is proprietary and confidential. Unauthorized copying or distribution is prohibited.
 
- PASSWORD 'hrms_password'
+ 📸 Bonus: Staff Role Limitations
+Feature	Admin	Staff
+View all employees	✅	❌
+View own employee	✅	✅
+Check in/out for anyone	✅	❌ (only self)
+View all attendance	✅	❌ (only own)
+Submit leave	✅	✅
+Approve leave	✅	❌
+View reports	✅	❌
+Manage users	✅	❌
 

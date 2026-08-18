@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { AttendanceController } from '../controllers/attendance.controller';
-import { authMiddleware, requireAttendanceOfficer, requireHRManager } from '../middleware/authMiddleware';
+import { authMiddleware, requireHRManager, requireStaff } from '../middleware/authMiddleware';
 
 const router = Router();
 const attendanceController = new AttendanceController();
@@ -8,46 +8,26 @@ const attendanceController = new AttendanceController();
 // All routes require authentication
 router.use(authMiddleware);
 
-// Get all attendance records
-router.get('/', requireAttendanceOfficer, attendanceController.getAllAttendance);
+// ---- Read endpoints (accessible by all authenticated users) ----
+// STAFF sees only their own data via service layer filtering
+router.get('/', requireStaff, attendanceController.getAllAttendance);
+router.get('/today', requireStaff, attendanceController.getTodayAttendance);
+router.get('/stats', requireStaff, attendanceController.getAttendanceStats);
+router.get('/employee/:employeeId/summary', requireStaff, attendanceController.getEmployeeAttendanceSummary);
+router.get('/:id', requireStaff, attendanceController.getAttendanceById);
 
-// Get today's attendance
-router.get('/today', requireAttendanceOfficer, attendanceController.getTodayAttendance);
+// ---- Write endpoints ----
+// Check-in/out, break in/out – STAFF can do for themselves
+router.post('/check-in', requireStaff, attendanceController.checkIn);
+router.post('/check-out', requireStaff, attendanceController.checkOut);
+router.post('/break-in', requireStaff, attendanceController.breakIn);
+router.post('/break-out', requireStaff, attendanceController.breakOut);
 
-// Get attendance stats
-router.get('/stats', requireAttendanceOfficer, attendanceController.getAttendanceStats);
-
-// Get employee attendance summary
-router.get('/employee/:employeeId/summary', requireAttendanceOfficer, attendanceController.getEmployeeAttendanceSummary);
-
-// Get overtime report
+// ---- Admin-only endpoints ----
 router.get('/overtime', requireHRManager, attendanceController.getOvertimeReport);
-
-// Check in
-router.post('/check-in', requireAttendanceOfficer, attendanceController.checkIn);
-
-// Check out
-router.post('/check-out', requireAttendanceOfficer, attendanceController.checkOut);
-
-// Break in
-router.post('/break-in', requireAttendanceOfficer, attendanceController.breakIn);
-
-// Break out
-router.post('/break-out', requireAttendanceOfficer, attendanceController.breakOut);
-
-// Manual attendance (admin)
 router.post('/manual', requireHRManager, attendanceController.manualAttendance);
-
-// Get attendance by ID
-router.get('/:id', requireAttendanceOfficer, attendanceController.getAttendanceById);
-
-// Update attendance
 router.put('/:id', requireHRManager, attendanceController.updateAttendance);
-
-// Mark overtime
 router.post('/:id/overtime', requireHRManager, attendanceController.markOvertime);
-
-// Delete attendance
 router.delete('/:id', requireHRManager, attendanceController.deleteAttendance);
 
 export default router;
