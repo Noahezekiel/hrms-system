@@ -219,31 +219,3 @@ Use HTTPS in production.
 
 Enable logging and monitoring.
 
-Git Commands
-bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin <your-repo>
-git push -u origin main
-Build Commands (for CI/CD)
-bash
-# Backend build
-cd server && npm run build
-
-# Frontend build
-cd client && npm run build
-License
-This project is proprietary and confidential. Unauthorized copying or distribution is prohibited.
-
- 📸 Bonus: Staff Role Limitations
-Feature	Admin	Staff
-View all employees	✅	❌
-View own employee	✅	✅
-Check in/out for anyone	✅	❌ (only self)
-View all attendance	✅	❌ (only own)
-Submit leave	✅	✅
-Approve leave	✅	❌
-View reports	✅	❌
-Manage users	✅	❌
-
